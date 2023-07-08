@@ -1,6 +1,6 @@
 import java.lang.reflect.Array;
 import java.util.Arrays;
-
+// check whether one string is permutation of another.
 public class StringPermutation {
 
     public static void main(String[] args) {
