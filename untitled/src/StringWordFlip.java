@@ -1,3 +1,4 @@
+import java.util.HashSet;
 import java.util.StringTokenizer;
 
 // input= '    hello world' , ouput= 'world hello'
@@ -5,7 +6,7 @@ public class StringWordFlip {
     public static void main(String[] args) {
 
         String s = new String(" Hello          world   ");
-
+        System.out.println("input : "+s);
         //easiest way
 //        StringTokenizer st = new StringTokenizer(s," ");
 //        StringBuilder b = new StringBuilder(s.length());
@@ -15,8 +16,18 @@ public class StringWordFlip {
 //        }
 //        System.out.println(b.toString());
 
-        reverseTokenize(s);
+//        reverseTokenize(s);
+//        HashSet<String> ts = new HashSet<String>();
+//
+//        ts.add("S");
+//        ts.add("S");
+//        ts.add("N");
+//    for( String t : ts)
+//        {
+//            System.out.println(t);
+//        }
     }
+
 
     private static void reverseTokenize(String s) {
 
@@ -31,11 +42,11 @@ public class StringWordFlip {
 
         b.delete(end + 1, b.length());
         b.delete(0, start);
-        System.out.println(b.toString());
-
+        //System.out.println(b.toString());
+        singleSpace(b);
         reverseString2(b, 0, b.length() - 1);
-        System.out.println(b.length());
-        System.out.println(b.toString());
+        //System.out.println(b.length());
+        //System.out.println(b.toString());
         start = 0;
         end = 0;
 
@@ -45,12 +56,12 @@ public class StringWordFlip {
 
             reverseString2(b, start, end - 1);
 
-            start = end + 1;
-            ++end;
+            start = ++end ;
+
 
         }
 
-        System.out.println(singleSpace(b));
+        System.out.println(b.toString());
 
 
     }
@@ -65,7 +76,7 @@ public class StringWordFlip {
         }
     }
 
-    public static String singleSpace(StringBuilder b)
+    public static void singleSpace(StringBuilder b)
     {
         int slow = 0;
         int fast= 1;
@@ -83,7 +94,6 @@ public class StringWordFlip {
             }
         }
 
-        return b.toString();
 
     }
 
