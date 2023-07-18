@@ -17,11 +17,12 @@ public class StringWordFlip {
 //        System.out.println(b.toString());
 
 //        reverseTokenize(s);
-//        HashSet<String> ts = new HashSet<String>();
-//
-//        ts.add("S");
-//        ts.add("S");
-//        ts.add("N");
+        HashSet<String> ts = new HashSet<String>(5);
+
+        ts.add("S");
+        ts.add("S");
+        ts.add("N");
+        ts.contains("S");
 //    for( String t : ts)
 //        {
 //            System.out.println(t);
