@@ -18,11 +18,15 @@ import pandas as pd
 # 'val2':np.random.randint(1,10, size=7)
 #
 # })
-cols=["mpg","cylinders","displacement","horsepower" ,"weight","acceleration","model year","origin","car name"]
+cols=["mpg","cylinders","displacement","horsepower" ,"weight","acceleration","model_year","origin","car_name"]
 df=pd.read_csv(filepath_or_buffer='/Users/batman/Downloads/auto+mpg/auto-mpg.data',delim_whitespace=True,header=None,names=cols)
 # print(df['horsepower'].unique())
 df['horsepower']=df['horsepower'].replace('?','0')
 df['horsepower'] = pd.to_numeric(df['horsepower'])
+print(df.pivot_table(values='horsepower',columns=["model_year"],index="car_name",dropna=True, fill_value=0))
+
+print(df.query('model_year == 75')[df.car_name.str.contains('ford')])
+
 # print(df.shape)
 # print(df.describe())
 # print(df['mpg'].value_counts()," KB")
@@ -36,6 +40,6 @@ df['horsepower'] = pd.to_numeric(df['horsepower'])
 #
 # print(df.groupby(["mpg","weight"]).aggregate({"model year":["min","max"],"horsepower":["mean"]}))
 
-print(df[['weight' , 'horsepower','acceleration','cylinders']][df.horsepower>80 ].corr())
+# print(df[['weight' , 'horsepower','acceleration','cylinders']][df.horsepower>80 ].corr())
 
 # print(df['model year'][df.horsepower>80])

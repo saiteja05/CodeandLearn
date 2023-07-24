@@ -10,4 +10,6 @@ data = pd.read_csv('/Users/batman/Downloads/adult/adult.data',delimiter=',',head
 # print(fake.name())
 # fakerevents=fe()
 
-print(data['hoursperweek'])
+# print(data['hoursperweek'])
+
+bbox = data['hoursperweek'].plot(kind="box")
