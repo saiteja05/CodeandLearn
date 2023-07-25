@@ -9,6 +9,15 @@ import pandas as pd
 #     8. origin:        multi-valued discrete
 #     9. car name:      string (unique for each instance)
 
+class basic:
+    val = 0
+    def basic(self):
+        val=i
+
+    def getval(self):
+        return self.val;
+
+
 
 # df = pd.DataFrame({
 #
@@ -27,6 +36,8 @@ print(df.pivot_table(values='horsepower',columns=["model_year"],index="car_name"
 
 print(df.query('model_year == 75')[df.car_name.str.contains('ford')])
 
+df1 = basic(2)
+print(df.getval())
 # print(df.shape)
 # print(df.describe())
 # print(df['mpg'].value_counts()," KB")
