@@ -47,12 +47,13 @@ def connect_db(dbname):
 def createtable(connect,cur,table_name,columns):
     ctbl = """create table if not exists {}({} int,{} int,{} int,{} int,{} int,{} double precision,{} int,{} varchar,{} int);""".format(
         table_name, *columns)
-    print(ctbl)
+    # print(ctbl)
     cur.execute(ctbl)
     connect.commit()
 
 def writedata(connect,cur,datafile : list[dict]):
     try:
+        cur.execute('truncate housingdata;')
         for r in range(len(datafile)):
             runnable=cast(datafile[r])
             if(runnable):
@@ -74,12 +75,12 @@ def readdata(connect,cur,colname,bound):
         sql='select * from housingdata where {} >= 30000 and {} <= 35000 ;'.format(colname,colname)
         cur.execute(sql,bound)
         results=cur.fetchall()
-        print(type(results))
+        # print(type(results))
         cols=[]
         for i in cur.description:
             cols.append(i.name)
         results.append(tuple(cols))
-        print(results)
+        # print(results)
         del cols
     except Exception as exc:
         print('error :', exc)
@@ -121,36 +122,41 @@ def readCsv(filepath : str):
             datalist.append((r))
         return datalist
 
-
+def writeCSV(path : str,rows : tuple):
+    with open(path+'output.csv', mode="w", newline="") as csvfile:
+        csvwriter = csv.writer(csvfile)
+        # print(results)
+        i=len(rows)-1
+        while(i>=0):
+            # print(rows[i],i)
+            csvwriter.writerow(rows[i])
+            i=i-1
+    return True
 
 if __name__ == '__main__':
-
     path='/Users/batman/Downloads/fd_data_engineer_test/data/'
     datalist=readCsv(filepath=path+'housing.csv')
 
-    print(len(datalist))
+    # print(len(datalist))
     removeEmptyRows(datalist)
     removeColulms(datalist,['longitude','latitude'])
     transform_median(datalist,2)
     createIndex(datalist)
-    print(len(datalist))
-    print(datalist[0])
+    # print(len(datalist))
+    # print(datalist[0])
     # print(tuple(datalist[0].keys()))
     # print(tuple(datalist[0].values()))
     connect,cur=connect_db(dbname='batman')
     createtable(connect,cur,"housingdata",tuple(datalist[0].keys()))
     writedata(connect,cur,datalist)
     results=readdata(connect,cur,colname='median_house_value',bound=[30000,35000])
+    if(writeCSV(path+'/output/output.csv',results)):
+        print("DONE")
 
-    # with open(path+'output.csv', mode="w", newline="") as csvfile:
-    #     csvwriter = csv.writer(csvfile)
-    #     print(results)
-    #     i=len(results)-1
-    #     while(i>=0):
-    #         csvwriter.writerows(results[i])
-    #         i=i-1
+    # print(results[0])
 
     connect.closeAll()
+
 
 
 
