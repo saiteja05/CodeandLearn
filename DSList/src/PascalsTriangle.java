@@ -33,4 +33,10 @@ public class PascalsTriangle {
 
     return output;
     }
+
+
+
+    // return row n , rth element. n-1 c r-1
+
+    //reurn nth row , 1,1 * n-1/1,1*n-1/1*n-2/2 .... so on.nth row has n elements.
 }

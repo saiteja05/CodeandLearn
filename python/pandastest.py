@@ -13,3 +13,4 @@ data = pd.read_csv('/Users/batman/Downloads/adult/adult.data',delimiter=',',head
 # print(data['hoursperweek'])
 
 bbox = data['hoursperweek'].plot(kind="box")
+print(bbox)
