@@ -1,6 +1,8 @@
 import pandas as pd
 import spark as sp
 
+def square(x):return x*x
+
 print("working")
 df=pd.read_csv('/Users/batman/Downloads/fd_data_engineer_test/data/housing.csv')
 # to get schema details
@@ -61,8 +63,34 @@ print(uniondf)
 print(pd.concat([df.head(10),df.tail(10)],ignore_index=True))
 pd.cut( df['latitude'],bins=3)
 
-#join
+#join ( we can join and concat on axis as well , default is y axis (axis 0))
 
 print(df.head(10).merge(df.tail(10), how= 'outer' ,on='latitude'))
 
-df.where(cond= (df['total_bedrooms']==2 df['median_income']=df['median_income']*2, other = (df['median_income']=df['median_income'])))
+#where
+df["median_income"].where(
+    df["total_bedrooms"] >2 ,
+    other = df["median_income"] * 1.1 , inplace=True)
+
+
+#window functiions
+
+#rolling window
+
+# let us take one column 20
+
+target_col = df["median_income"].head(20);
+print(target_col.info())
+print(target_col.rolling(7).mean())
+print(target_col)
+print(target_col.rolling(1).apply(square))
+
+
+# you can give rank target_col.rank()\
+# lag using shift(1)
+#lead using shift(-1)
+# https://sparkbyexamples.com/pandas/pandas-window-functions/
+
+# explading sum
+
+print(target_col.expanding(3).sum())
