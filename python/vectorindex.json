@@ -1,0 +1,15 @@
+{
+ "fields": [
+   {
+     "numDimensions": 384,
+     "path": "fullplot_embeddings",
+     "similarity": "cosine",
+     "type": "vector"
+   },
+   {
+     "path": "year",
+     "type": "filter"
+   }
+ ]
+}
+/*create index in atlas*/

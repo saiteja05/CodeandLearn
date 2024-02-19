@@ -1,0 +1,37 @@
+from pymongo.mongo_client import MongoClient
+from pymongo.server_api import ServerApi
+from sentence_transformers import SentenceTransformer
+from timeit import default_timer as timer
+
+model = SentenceTransformer(
+    'all-MiniLM-L6-v2')  # was trained using cosine similarity and generates 384 dimension dense vector
+
+uri = "mongodb+srv://tejaboddapati:Bangalore123@cluster0.tcgzn.mongodb.net/?retryWrites=true&w=majority"
+
+
+# Create a new client and connect to the server
+client = MongoClient(uri, server_api=ServerApi('1'))
+
+# Send a ping to confirm a successful connection
+try:
+    start = timer()
+    # client.admin.command('ping')
+    # db=client.KaggleDB
+    db = client.sample_mflix
+    # dataset=db.movies
+    src = db.movies
+
+    # ETL which loads data from sample dataset sample_mflix.movies into sample_mflix.movies_subset
+    src.aggregate([{"$match": {"year": {"$gt": 2010}}}, {"$out": "movies_subset"}])
+    dataset = db.movies_subset
+    for i in dataset.find({"fullplot": {"$exists": True}}):
+        fullplot_embeddings = model.encode(i['fullplot']).tolist()
+        # print(fullplot_embeddings)
+        a = dataset.update_one({"_id": i['_id']}, {"$set": {"fullplot_embeddings": fullplot_embeddings}})
+        print(i['_id'])
+    end = timer()
+    print(start)
+    print(end)
+    print("Successfully loaded embedding in " + str(end - start) + " seconds")
+except Exception as e:
+    print(e)
