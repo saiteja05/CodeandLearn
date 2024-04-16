@@ -6,7 +6,8 @@ from timeit import default_timer as timer
 model = SentenceTransformer(
     'all-MiniLM-L6-v2')  # was trained using cosine similarity and generates 384 dimension dense vector
 
-uri = "mongodb+srv://tejaboddapati:Bangalore123@cluster0.tcgzn.mongodb.net/?retryWrites=true&w=majority"
+# uri = "mongodb+srv://tejaboddapati:Bangalore123@cluster0.tcgzn.mongodb.net/?retryWrites=true&w=majority"
+uri="mongodb+srv://tejaboddapati:Bangalore123@cluster0.tcgzn.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
 
 
 # Create a new client and connect to the server
@@ -22,13 +23,14 @@ try:
     src = db.movies
 
     # ETL which loads data from sample dataset sample_mflix.movies into sample_mflix.movies_subset
-    src.aggregate([{"$match": {"year": {"$gt": 2010}}}, {"$out": "movies_subset"}])
-    dataset = db.movies_subset
+    src.aggregate([{"$match": {"year": {"$gt": 1995}}}, {"$out": "movies_subset1"}])
+    dataset = db.movies_subset1
     for i in dataset.find({"fullplot": {"$exists": True}}):
         fullplot_embeddings = model.encode(i['fullplot']).tolist()
         # print(fullplot_embeddings)
         a = dataset.update_one({"_id": i['_id']}, {"$set": {"fullplot_embeddings": fullplot_embeddings}})
         print(i['_id'])
+        print(fullplot_embeddings)
     end = timer()
     print(start)
     print(end)

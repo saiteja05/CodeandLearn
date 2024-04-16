@@ -4,11 +4,12 @@ from sentence_transformers import SentenceTransformer
 import sys
 
 # total arguments
-n = len(sys.argv)
-print("len",n)
-query = sys.argv[1]
+# n = len(sys.argv)
+# print("len",n)
+query = "a movie where a superhero can fly"
 model = SentenceTransformer('all-MiniLM-L6-v2')
-uri = "mongodb+srv://tejaboddapati:Bangalore123@cluster0.tcgzn.mongodb.net/?retryWrites=true&w=majority"
+uri="mongodb+srv://tejaboddapati:Bangalore123@cluster0.tcgzn.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
+
 
 client = MongoClient(uri, server_api=ServerApi('1'))
 
@@ -22,6 +23,7 @@ try:
                 "queryVector": query_embedding,
                 "numCandidates": 20,
                 "limit": 5
+                ,"filter":{"year":{"$gte":2015}}
             }
         }
     ]
