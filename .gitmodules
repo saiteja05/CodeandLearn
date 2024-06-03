@@ -1,0 +1,3 @@
+[submodule "atlas-vector-search-fashion-products"]
+	path = atlas-vector-search-fashion-products
+	url = https://github.com/saiteja05/mongodb-atlas-vector-search-fashion-products
