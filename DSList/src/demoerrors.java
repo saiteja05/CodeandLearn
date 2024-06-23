@@ -5,7 +5,6 @@ public class demoerrors
 
         System.out.println("x");
 
-        dsakdjkdjdsfj;
 
         System.out.println("chyfr");
 

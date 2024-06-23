@@ -6,7 +6,11 @@ import sys
 # total arguments
 # n = len(sys.argv)
 # print("len",n)
+<<<<<<< Updated upstream
 query = "a movie where there are superheros"
+=======
+query = "a porn movie"
+>>>>>>> Stashed changes
 model = SentenceTransformer('all-MiniLM-L6-v2')
 uri="mongodb+srv://tejaboddapati:Bangalore123@cluster0.tcgzn.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
 
