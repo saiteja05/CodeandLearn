@@ -24,8 +24,8 @@ try:
             stats = db.command("collstats", collection_name)
             data_size = stats.get("size", 0)
             print("size(bytes):", data_size)
-            isSharded = stats.get("sharded")
-            print("Sharded?:", isSharded)
+            # isSharded=stats.get("sharded")
+            # print("Sharded?:",isSharded)
             # Printing Indexes
             if 'idIndex' in cname:
                 id_index_value = cname['idIndex']
@@ -39,22 +39,31 @@ try:
                 else:
                     shard_key = collection_info["key"]
                     print(f"Shard Key: {shard_key}")
-                    # Retrieve chunk information from 'config.chunks'
-                    chunks = config_db.chunks.find({"ns": f"{db_name}.{col_name}"})
-                    # Calculate shard distribution by counting chunks per shard
+                    # Retrieve chunk information from 'config.collections' and 'config.chunks'
                     shard_distribution = {}
-                    for chunk in chunks:
-                        shard_name = chunk["shard"]
-                        shard_distribution[shard_name] = shard_distribution.get(shard_name, 0) + 1
-                    # Output the shard distribution summary
-                    for shard, chunk_count in shard_distribution.items():
-                        print(f"Shard: {shard}, Number of Chunks: {chunk_count}")
-                        # Retrieve the data size on each shard
-                    for shard in shard_distribution.keys():
-                        shard_client = MongoClient(client[shard].address)
-                        stats = shard_client[db_name].command("collstats", col_name)
-                        print(
-                            f"Shard: {shard}, Document Count: {stats.get('count')}, Data Size: {stats.get('size')} bytes")
+                    for col in config_db.collections.find({"_id": f"{db_name}.{col_name}"}):
+                        # Calculate shard distribution by counting chunks per shard
+                        for chunk in config_db.chunks.find({"uuid": col['uuid']}):
+                            shard_name = chunk["shard"]
+                            shard_distribution[shard_name] = shard_distribution.get(shard_name, 0) + 1
+                        # Output the shard distribution summary
+                        for shard, chunk_count in shard_distribution.items():
+                            print(f"Shard: {shard}, Number of Chunks: {chunk_count}")
+
+                    # chunks = config_db.chunks.find({"_id": f"{db_name}.{col_name}"})
+                    # #Calculate shard distribution by counting chunks per shard
+                    # shard_distribution = {}
+                    # for chunk in chunks:
+                    #     shard_name = chunk["shard"]
+                    #     shard_distribution[shard_name] = shard_distribution.get(shard_name, 0) + 1
+                    #  # Output the shard distribution summary
+                    # for shard, chunk_count in shard_distribution.items():
+                    #     print(f"Shard: {shard}, Number of Chunks: {chunk_count}")
+                    #     #Retrieve the data size on each shard
+                    # for shard in shard_distribution.keys():
+                    #     shard_client = MongoClient(client[shard].address)
+                    #     stats = shard_client[db_name].command("collstats", col_name)
+                    #     print(f"Shard: {shard}, Document Count: {stats.get('count')}, Data Size: {stats.get('size')} bytes")
             print("-------")
 
 except Exception as e:
