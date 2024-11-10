@@ -34,7 +34,6 @@ try:
 
             # Check sfor sharding keys
             collection_info = config_db.collections.find_one({"_id": f"{db_name}.{col_name}"})
-            # print(collection_info)
             if not collection_info or not collection_info.get("key"):
                 print("The specified collection is not sharded.")
             else:
