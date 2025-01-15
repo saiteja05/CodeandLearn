@@ -5,14 +5,15 @@ from pymongo import MongoClient
 import random
 import string
 import os
+from tqdm import tqdm
 
 MONGO_URI = "mongodb+srv://locust:locust@cluster2.tcgzn.mongodb.net/?retryWrites=true&w=majority&appName=Cluster2"
 DATABASE_NAME = "benchmark_db"
-COLLECTION_NAME = "benchmark_collection"
+COLLECTION_NAME = "benchmark_collection2"
 DOC_COUNT = 10000  # Total number of documents for each test
 DOC_SIZE = 5 * 1024  # Size of each document in bytes
 cpucount = int(os.cpu_count())
-PROCESS_COUNTS = [int(cpucount / 2), cpucount, cpucount * 2, cpucount * 4, cpucount * 8]
+PROCESS_COUNTS = [int(cpucount / 2), cpucount, cpucount * 2, cpucount * 3, cpucount * 4]
 
 # Generate a random document of specified size
 def generate_document():
@@ -93,9 +94,7 @@ def run_benchmark(process_count, all_documents):
 # Main function to run benchmarks for multiple process counts
 def benchmark_mongodb_multiple_processes():
     # Generate all documents upfront
-    print(f"Generating {DOC_COUNT} documents")
-    all_documents = [generate_document() for _ in range(DOC_COUNT)]
-    print(f"Document generation complete")
+    all_documents = [generate_document() for _ in tqdm(range(DOC_COUNT), desc="Document Generation")]
 
     summary = []
 
@@ -108,7 +107,8 @@ def benchmark_mongodb_multiple_processes():
         print(f"Total Time: {result['total_time']:.2f} seconds\n")
 
     # Print summary
-    print("\n===== Summary of Benchmarks (insert_many) =====")
+    print("\n===== Summary of Benchmarks using insert_many =====")
+    print(f"cpu count : {cpucount}")
     print(f"{'Processes':<15}{'Batch_size':<15}{'Doc Size (KB)':<15}{'TPS':<15}{'Total Time (s)':<20}{'Successful Inserts':<20}{'Failed Inserts':<15}")
     print("-" * 100)
     for result in summary:
@@ -118,5 +118,5 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         DOC_COUNT = int(sys.argv[1])
     if len(sys.argv) > 2:
-        DOC_SIZE = int(sys.argv[2])*1024
+        DOC_SIZE = int(sys.argv[2]) * 1024
     benchmark_mongodb_multiple_processes()
