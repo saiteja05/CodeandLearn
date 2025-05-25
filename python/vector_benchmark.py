@@ -17,7 +17,7 @@ SIMULATE_RPM = True
 
 def get_vectors():
     array_of_arrays = []
-    with open('vectors.csv', newline='') as csvfile:
+    with open('Vector_search_read_benchmark/vectors.csv', newline='') as csvfile:
         reader = csv.reader(csvfile)
         for row in reader:
             if len(row) > 0:
