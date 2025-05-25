@@ -54,6 +54,17 @@ csv
 
 Please use pip to install these packages.
 
+## Output Contains
+
+
+- **Pipeline**: Name of the aggregation pipeline being tested
+- **RPM**: Requests per minute rate
+- **Threads**: Number of concurrent threads used
+- **Sample**: Number of sample vectors used from vectors.csv
+- **Reqs**: Total number of requests executed
+- **NumCand**: Number of candidates used in vector search
+- **Limit**: Result limit for the query
+- **P50/P70/P95/P99**: Response time percentiles in milliseconds
 ---
 
 #### Trademark MongoDB ©2025
