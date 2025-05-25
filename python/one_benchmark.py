@@ -5,7 +5,7 @@ import random
 import string
 import os
 
-MONGO_URI = "mongodb+srv://locust:locust@cluster2.tcgzn.mongodb.net/?retryWrites=true&w=majority&appName=Cluster2"
+MONGO_URI = "mongodb+srv://locust:locust@cluster0.tcgzn.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
 DATABASE_NAME = "benchmark_db"
 COLLECTION_NAME = "benchmark_collection2"
 DOC_COUNT = 10000  # Total number of documents for each test

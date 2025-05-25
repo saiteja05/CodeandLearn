@@ -7,11 +7,11 @@ import string
 import os
 from tqdm import tqdm
 
-MONGO_URI = "<endpoint of mongodb>"
+MONGO_URI = "mongodb+srv://locust:locust@cluster0.tcgzn.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
 DATABASE_NAME = "benchmark_db"
 COLLECTION_NAME = "benchmark_collection2"
 DOC_COUNT = 100000  # Total number of documents for each batch benchmark
-DOC_SIZE = 5 * 1024  # Size of each document in bytes
+DOC_SIZE = 1 * 1024  # Size of each document in bytes
 cpucount = int(os.cpu_count())
 PROCESS_COUNTS = [int(cpucount / 2), cpucount, cpucount * 2, cpucount * 3, cpucount * 4]
 
