@@ -71,3 +71,25 @@ try:
    #      print(i['knowledge_base_id'])
 except Exception as e:
     print(e)
+
+import datetime
+
+def get_index_status(self, mongodb_name, collection_name):
+    status_details = []
+    cursor = self.mongo_client[mongodb_name][collection_name].list_search_indexes()
+    # logger.info(f"Fetching index from db from {collection_name}")
+    for index in cursor:
+        if index.get("statusDetail", []):
+            status_details = index.get("statusDetail", [])
+    return status_details
+#"""wait for index ready status upto 180 secs"""
+
+def wait_for_index_ready(self, mongodb_name, collection_name, timeout=180):
+ # logger.debug("Waiting for index ready status")
+ end_time = datetime.now() + timedelta(seconds=timeout)
+ while datetime.now() < end_time:
+     status_detail = self.get_index_status(mongodb_name, collection_name)
+     if self.can_proceed_with_queries(status_detail):
+         return True
+    time.sleep(5) # Wait for 5 seconds before the next check
+ return False

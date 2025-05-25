@@ -12,6 +12,9 @@ DOC_COUNT = 10000  # Total number of documents for each test
 DOC_SIZE = 5 * 1024  # Size of each document in bytes
 PROCESS_COUNTS = [10, 25, 50, 100, 200,500]  # List of process counts to test
 
+
+
+
 # Generate a random document of specified size
 def generate_document():
     random_text = ''.join(random.choices(string.ascii_letters + string.digits, k=DOC_SIZE - 100))
