@@ -7,7 +7,7 @@ import string
 import os
 from tqdm import tqdm
 
-MONGO_URI = "mongodb+srv://locust:locust@cluster0.tcgzn.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
+MONGO_URI = "mongodb+srv://<uname>:<pwd>@cluster0.tcgzn.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
 DATABASE_NAME = "benchmark_db"
 COLLECTION_NAME = "benchmark_collection2"
 DOC_COUNT = 100000  # Total number of documents for each batch benchmark
