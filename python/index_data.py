@@ -36,35 +36,37 @@ def analyze_collection_indexes(collection):
     # Collect index usage stats (works only on WiredTiger)
     try:
         index_stats = list(collection.aggregate([{ "$indexStats": {} }]))
+        usage_map = {stat['name']: stat['accesses']['ops'] for stat in index_stats}
     except Exception as e:
         print("  ⚠️  Could not fetch index stats. Reason:", str(e))
-        index_stats = []
+        usage_map = {}
 
-    usage_map = {stat['name']: stat['accesses']['ops'] for stat in index_stats}
+    # Get index sizes (only on dedicated clusters)
+    try:
+        stats = db.command("collStats", collection.name)
+        index_sizes = stats.get("indexSizes", {})
+    except Exception as e:
+        print("  ⚠️  Could not fetch index sizes. Reason:", str(e))
+        index_sizes = {}
 
-    used_indexes = set()
     for idx in indexes:
         name = idx['name']
         key = idx['key']
         ops = usage_map.get(name, 0)
+        size = index_sizes.get(name, "N/A")
 
-        # Print basic index info
         print(f"   ➤ Index: {name}")
         print(f"      Key: {dict(key)}")
         print(f"      Usage Ops: {ops}")
+        print(f"      Size: {size if isinstance(size, str) else str(round(size / 1024, 2)) + ' KB'}")
 
         # Optimization suggestions
         if name == '_id_':
             continue  # default index
-        if ops == 0:
+        if ops == 0 and not shared_cluster:
             print("      🚨 Unused index (check for removal if confirmed unused)")
         if len(key) == 1:
             print("      ⚠️  Single-field index — consider compound index if sorted/filtered together")
-
-        used_indexes.add(name)
-
-    if not index_stats:
-        print("   ⚠️  Index stats unavailable (likely due to shared tier)")
 
 # ---------------------------------------------
 # 🧠 Suggest Index Redundancy & Scope
