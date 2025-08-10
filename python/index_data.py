@@ -1,31 +1,50 @@
 import pymongo
 from pymongo import MongoClient
 from pprint import pprint
-from collections import defaultdict
+# from collections import defaultdict
 
 # ---------------------------------------------
 # 🔧 CONFIGURATION
 # ---------------------------------------------
-MONGODB_URI = "mongodb+srv://<>:<>@cluster0.tcgzn.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
+MONGODB_URI = "mongodb+srv://locust:locust@cluster0.tcgzn.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
 DATABASE_NAME = "ecommerce"
 
+# ---------------------------------------------
+# 🚀 Connect to MongoDB
+# ---------------------------------------------
 # ---------------------------------------------
 # 🚀 Connect to MongoDB
 # ---------------------------------------------
 client = MongoClient(MONGODB_URI)
 db = client[DATABASE_NAME]
 
-# Determine if cluster is shared (M0-M2) or dedicated (M10+)
+def detect_deployment_type():
+    try:
+        build_info = client.admin.command("buildInfo")
+        print(build_info)
+        atlas_version = build_info.get("atlasVersion", None)
+        modules = build_info.get("modules", [])
+        version = build_info.get("version", "unknown")
+
+        # Enterprise on-prem
+        if "enterprise" in modules:
+            return f"MongoDB Enterprise (version {version})"
+
+        return f"MongoDB Community (version {version})"
+
+    except Exception as e:
+        return f"⚠️ Unknown Deployment (error: {str(e)})"
+
 def is_shared_cluster():
     try:
-        cluster_stats = client.admin.command("hostInfo")
-        return False  # hostInfo only works on dedicated
+        client.admin.command("hostInfo")
+        return False
     except pymongo.errors.OperationFailure as e:
-        return True  # Shared tier doesn't allow hostInfo
+        print("⚠️ Could not execute hostInfo (likely restricted privileges)")
+        return False  # Assume dedicated unless proven otherwise
 
 shared_cluster = is_shared_cluster()
-print(f"\n🔍 Detected Cluster Tier: {'Shared' if shared_cluster else 'Dedicated'}\n")
-
+print("🧠 MongoDB Deployment:", detect_deployment_type())
 # ---------------------------------------------
 # 📊 Analyze Indexes in Each Collection
 # ---------------------------------------------
@@ -33,20 +52,20 @@ def analyze_collection_indexes(collection):
     print(f"\n📁 Collection: {collection.name}")
     indexes = list(collection.list_indexes())
 
-    # Collect index usage stats (works only on WiredTiger)
+    # Collect index usage stats
     try:
         index_stats = list(collection.aggregate([{ "$indexStats": {} }]))
         usage_map = {stat['name']: stat['accesses']['ops'] for stat in index_stats}
     except Exception as e:
-        print("  ⚠️  Could not fetch index stats. Reason:", str(e))
+        print(f"⚠️ Could not fetch indexStats for {collection.name}: {str(e)}")
         usage_map = {}
 
-    # Get index sizes (only on dedicated clusters)
+    # Get index sizes
     try:
         stats = db.command("collStats", collection.name)
         index_sizes = stats.get("indexSizes", {})
     except Exception as e:
-        print("  ⚠️  Could not fetch index sizes. Reason:", str(e))
+        print(f"⚠️ Could not fetch collStats for {collection.name}: {str(e)}")
         index_sizes = {}
 
     for idx in indexes:
@@ -60,19 +79,18 @@ def analyze_collection_indexes(collection):
         print(f"      Usage Ops: {ops}")
         print(f"      Size: {size if isinstance(size, str) else str(round(size / 1024, 2)) + ' KB'}")
 
-        # Optimization suggestions
         if name == '_id_':
-            continue  # default index
-        if ops == 0 and not shared_cluster:
-            print("      🚨 Unused index (check for removal if confirmed unused)")
+            continue  # skip default index
+        if ops == 0 and usage_map:
+            print("      🚨 Unused index — candidate for review")
         if len(key) == 1:
-            print("      ⚠️  Single-field index — consider compound index if sorted/filtered together")
+            print("      ⚠️  Single-field index — consider compound if part of multi-filter/sort queries")
 
 # ---------------------------------------------
 # 🧠 Suggest Index Redundancy & Scope
 # ---------------------------------------------
 def suggest_index_optimizations():
-    print("\n🔧 Global Suggestions:")
+    print("\n🔧 Global Index Suggestions:")
     for collection_name in db.list_collection_names():
         collection = db[collection_name]
         try:
@@ -93,7 +111,6 @@ def suggest_index_optimizations():
 # ---------------------------------------------
 def main():
     print("📦 MongoDB Index Analyzer\n")
-
     for coll_name in db.list_collection_names():
         collection = db[coll_name]
         try:
@@ -103,11 +120,7 @@ def main():
 
     suggest_index_optimizations()
 
-    if shared_cluster:
-        print("\n⚠️ Note: On shared clusters (M0–M2), some commands like `$indexStats`, `hostInfo`, or `collStats` may be limited.")
-        print("   → Use query logs and Atlas UI for deep analysis.")
-    else:
-        print("\n✅ Dedicated cluster — full introspection available.")
+    print("\n✅ Index inspection complete.")
 
 if __name__ == "__main__":
     main()
