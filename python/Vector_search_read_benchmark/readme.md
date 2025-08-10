@@ -65,6 +65,8 @@ Please use pip to install these packages.
 - **NumCand**: Number of candidates used in vector search
 - **Limit**: Result limit for the query
 - **P50/P70/P95/P99**: Response time percentiles in milliseconds
+
+You can visualize it here : https://saiteja05.github.io/datalog/performance_visualization.html
 ---
 
 #### Trademark MongoDB ©2025
