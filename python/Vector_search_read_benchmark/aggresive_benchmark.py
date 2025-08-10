@@ -352,7 +352,7 @@ def print_final_table():
 
 if __name__ == '__main__':
     vectors = get_vectors()
-    uri = "mongodb+srv://locust:locust@cluster0.tcgzn.mongodb.net/?retryWrites=true&w=majority&readPreference=nearest&appName=Cluster0"
+    uri = "mongodb+srv://locust:locust1@cluster0.tcgzn.mongodb.net/?retryWrites=true&w=majority&readPreference=nearest&appName=Cluster0"
     db_name = "ecommerce"
     coll_name = "catalog"
 

@@ -547,7 +547,7 @@ def print_final_table():
 
 if __name__ == '__main__':
     vectors = get_vectors()
-    uri = os.getenv('MONGODB_URI', "mongodb+srv://locust:locust@cluster0.tcgzn.mongodb.net/?retryWrites=true&w=majority&readPreference=nearest&appName=Cluster0")
+    uri = os.getenv('MONGODB_URI', "mongodb+srv://locust:locust1@cluster0.tcgzn.mongodb.net/?retryWrites=true&w=majority&readPreference=nearest&appName=Cluster0")
     db_name = os.getenv('MONGODB_DB', "ecommerce")
     coll_name = os.getenv('MONGODB_COLL', "catalog")
 

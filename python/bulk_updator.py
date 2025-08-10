@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 import math
 
 # --- Config ---
-MONGO_URI = "mongodb+srv://locust:locust@cluster0.tcgzn.mongodb.net/?retryWrites=true&w=1"
+MONGO_URI = "mongodb+srv://locust:locust1@cluster0.tcgzn.mongodb.net/?retryWrites=true&w=1"
 DB_NAME = "ecommerce"
 COLLECTION_NAME = "catalog"
 BATCH_SIZE = 500000
