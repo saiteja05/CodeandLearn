@@ -207,7 +207,7 @@ def functionalHybrid_pipeline(queryVector, num_candidates,limit):
                                                     }
                                                 }
                                             ]
-                                        }
+                                        }, "concurrent": True
 
                                     }
                                 },
@@ -217,11 +217,12 @@ def functionalHybrid_pipeline(queryVector, num_candidates,limit):
                             ]
                         }
                     },
+                    
                     "scoreDetails": True
                 }
             },
             {
-                "$limit": num_candidates
+                "$limit": limit
             },
             {
                     "$project": {
@@ -256,6 +257,64 @@ def vectoronly_pipeline(queryVector, num_candidates,limit):
         {"$project": {"_id": 1, "style_id": 1, "similarity_score": {"$meta": "vectorSearchScore"}}}
                             ]
 
+
+def new_index_pipeline(queryVector,num_candidates,limit):
+    return [
+    {
+        '$search': {
+            'index': 'hybrid_index', 
+            'vectorSearch': {
+                'queryVector':queryVector, 
+                'path': 'embedding', 
+                'numCandidates': num_candidates, 
+                'limit': limit, 
+                'filter': {
+                    'compound': {
+                        'must': [
+                            {
+                                'compound': {
+                                    'should': [
+                                        {
+                                            'text': {
+                                                'query': 'women', 
+                                                'path': 'global_attr_gender'
+                                            }
+                                        }, {
+                                            'text': {
+                                                'query': 'dress', 
+                                                'path': 'global_attr_sub_category'
+                                            }
+                                        }, {
+                                            'text': {
+                                                'query': 'dresses', 
+                                                'path': 'global_attr_article_type'
+                                            }
+                                        }, {
+                                            'text': {
+                                                'query': 'yellow', 
+                                                'path': 'global_attr_base_colour'
+                                            }
+                                        }, {
+                                            'text': {
+                                                'query': 'maxi', 
+                                                'path': 'Length_article_attr'
+                                            }
+                                        }
+                                    ]
+                                }
+                            }, {
+                                'equals': {
+                                    'path': 'brands_filter_facet', 
+                                    'value': 'Titan'
+                                }
+                            }
+                        ]
+                    }
+                }
+            }
+        }
+    }
+]
 
 mongo_client = None
 
@@ -349,10 +408,11 @@ def print_final_table():
     for r in results_summary:
         print(f"{r['pipeline']:<40} {r['rpm']:<8} {r['threads']:<8} {r['sample']:<8} {r['requests']:<8} {r['num_candidates']:<9} {r['TopK']:<8} {r['p50']:<10.2f} {r['p70']:<10.2f} {r['p95']:<10.2f} {r['p99']:<10.2f}")
     print("=" * 150)
+    print("Visualize here : https://saiteja05.github.io/datalog/performance_visualization.html")
 
 if __name__ == '__main__':
     vectors = get_vectors()
-    uri = "mongodb+srv://locust:locust1@cluster0.tcgzn.mongodb.net/?retryWrites=true&w=majority&readPreference=nearest&appName=Cluster0"
+    uri = "mongodb+srv://locust:locust@cluster0.tcgzn.mongodb.net/?retryWrites=true&w=majority&readPreference=nearest&appName=Cluster0"
     db_name = "ecommerce"
     coll_name = "catalog"
 
@@ -369,9 +429,16 @@ if __name__ == '__main__':
             #     ("Search, Bucket and Sort (no pre filter)", search_bucket_sort_pipeline)
             # ]
 
-            PIPELINES = [("functionalHybdrid", functionalHybrid_pipeline), ("VectorSearchOnly", vectoronly_pipeline)]
+            # PIPELINES = [("functionalHybdrid", functionalHybrid_pipeline), ("VectorSearchOnly", vectoronly_pipeline)]
 
-            thread_counts = [os.cpu_count(),os.cpu_count()*2,os.cpu_count()*4,os.cpu_count()*8]
+               
+            PIPELINES = [("nativeTextFilterPipeline",new_index_pipeline)
+                     ,("functionalHybrid", functionalHybrid_pipeline)
+                     ]
+            cpu_count=os.cpu_count()
+            thread_counts = [cpu_count, cpu_count*2]
+
+            # [os.cpu_count(),os.cpu_count()*2,os.cpu_count()*4,os.cpu_count()*8]
 
             num_candidates_list = [(100,100),(300,100),(500,100),(500,250), (500,500)]
 
