@@ -14,12 +14,12 @@ CLUSTER_NAME = "your_cluster_name"
 # Process ID format: "hostname:port" - Get this from Atlas UI or API
 # Example: "cluster0-shard-00-00.xxxxx.mongodb.net:27017"
 PROCESS_ID = ""  # Leave empty to auto-detect or fill in use one of the cluster nodes
+# ex:
+# PUBLIC_KEY="yxvorpoz"
+# PRIVATE_KEY="ce051203-2584-4870-be7d-d495dd7ddc23"
 
-PUBLIC_KEY="yxvorpoz"
-PRIVATE_KEY="ce051203-2584-4870-be7d-d495dd7ddc23"
-
-PROJECT_ID = "654dc3bcd782d2777b255b9f"
-CLUSTER_NAME = "Cluster0"
+# PROJECT_ID = "654dc3bcd782d2777b255b9f"
+# CLUSTER_NAME = "Cluster0"
 # Leave empty to auto-detect, or set manually: "hostname:port"
 # To find it manually: Atlas UI -> Cluster -> Metrics -> any node hostname:port
 
