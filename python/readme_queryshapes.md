@@ -6,6 +6,7 @@ A  performance diagnostic tool for MongoDB Atlas clusters (8.0+). Analyzes query
 
 ### Core Analysis
 - **Query Shape Insights**: Fetches and analyzes all query shapes from Atlas Query Insights API (v2)
+- **Slow Query Logs**: Independently fetches slow query logs from all replica set nodes
 - **Multi-Node Analysis**: Automatically detects and analyzes all nodes in a replica set
 - **System Query Filtering**: Filters out internal MongoDB system queries for clean reports
 - **Full Query Shape Display**: Shows complete query shapes with proper JSON formatting
@@ -77,7 +78,8 @@ python atlasMongoDiagnostic.py
 ```
 📋 EXECUTIVE SUMMARY
 
-   Total Query Shapes: 81
+   Query Shapes Analyzed: 81
+   Slow Query Logs Found: 45
    Total Executions: 2,200,656
    Collections Analyzed: 29
    Slow Queries (P99 > 100ms): 0
@@ -289,6 +291,32 @@ send_email_report('mongo_performance_report.md')
 
 ## 🔍 Troubleshooting
 
+### 500 Internal Server Error
+This is a **temporary server-side issue** from MongoDB Atlas, not a problem with your script or credentials.
+
+**What happens:**
+```
+✗ Query Shapes API failed: 500 Server Error: Internal Server Error
+```
+
+**The script will automatically:**
+1. Retry up to **10 times** with random jitter (3-5 seconds between attempts)
+2. Continue to fetch Slow Query Logs independently (not affected by Query Shapes failure)
+3. Generate a report with whatever data is available
+
+**Note:** The script fetches **both** Query Shape Insights and Slow Query Logs independently. If one fails, the other will still be collected.
+
+**If it persists:**
+- ⏳ **Wait a few minutes and retry** - this is usually a transient Atlas issue
+- 🔧 Check [Atlas Status Page](https://status.cloud.mongodb.com/) for ongoing incidents
+- 🔄 Verify your cluster isn't undergoing maintenance or scaling operations
+- 📊 Check Atlas UI for any alerts on your cluster
+
+**Manual retry:**
+```bash
+python atlasMongoDiagnostic.py
+```
+
 ### 404 Errors
 - Ensure your cluster is M10+ (Query Insights not available on shared clusters)
 - Verify PROJECT_ID and CLUSTER_NAME are correct
@@ -309,6 +337,7 @@ send_email_report('mongo_performance_report.md')
 This tool uses the following MongoDB Atlas APIs:
 
 - **Query Shape Insights API** (v2): `/api/atlas/v2/groups/{groupId}/clusters/{clusterName}/queryShapeInsights/summaries`
+- **Slow Query Logs API** (v1.0): `/api/atlas/v1.0/groups/{groupId}/processes/{processId}/performanceAdvisor/slowQueryLogs`
 - **Processes API** (v1.0): `/api/atlas/v1.0/groups/{groupId}/processes`
 - **Performance Advisor API** (v1.0): `/api/atlas/v1.0/groups/{groupId}/processes/{processId}/performanceAdvisor/suggestedIndexes`
 - **Clusters API** (v2): `/api/atlas/v2/groups/{groupId}/clusters/{clusterName}`

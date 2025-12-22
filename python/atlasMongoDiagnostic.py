@@ -3,6 +3,7 @@ from requests.auth import HTTPDigestAuth
 from collections import defaultdict
 import csv
 import sys
+import time
 
 # --- CONFIGURATION ---
 PUBLIC_KEY = "your_public_key"
@@ -15,13 +16,12 @@ CLUSTER_NAME = "your_cluster_name"
 # Example: "cluster0-shard-00-00.xxxxx.mongodb.net:27017"
 PROCESS_ID = ""  # Leave empty to auto-detect or fill in use one of the cluster nodes
 # ex:
-# PUBLIC_KEY="yxvorpoz"
-# PRIVATE_KEY="ce051203-2584-4870-be7d-d495dd7ddc23"
+PUBLIC_KEY="yxvorpoz"
+PRIVATE_KEY="ce051203-2584-4870-be7d-d495dd7ddc23"
 
-# PROJECT_ID = "654dc3bcd782d2777b255b9f"
-# CLUSTER_NAME = "Cluster0"
-# Leave empty to auto-detect, or set manually: "hostname:port"
-# To find it manually: Atlas UI -> Cluster -> Metrics -> any node hostname:port
+PROJECT_ID = "654dc3bcd782d2777b255b9f"
+CLUSTER_NAME = "Cluster0"
+
 
 # Correct API base URLs - Query Insights uses v2 API without cluster name in path
 BASE_URL_V2 = f"https://cloud.mongodb.com/api/atlas/v2/groups/{PROJECT_ID}"
@@ -33,6 +33,9 @@ SLOW_QUERY_THRESHOLD_MS = 100  # P99 threshold for slow query alerts
 HIGH_EXEC_COUNT_THRESHOLD = 10000  # Execution count threshold
 INEFFICIENT_RATIO_THRESHOLD = 10  # docsExamined/docsReturned ratio threshold
 P99_P50_VARIANCE_THRESHOLD = 5  # P99/P50 ratio for inconsistent performance
+
+# Performance Advisor - set to True to enable index suggestions
+ENABLE_PERFORMANCE_ADVISOR = False
 
 def get_bucket(ms):
     if ms <= 10: return "1-10"
@@ -156,14 +159,23 @@ def detect_performance_issues(stats):
 
     return {'issues': issues, 'highlights': highlights, 'has_critical': has_critical}
 
-def fetch_data(endpoint, params=None, use_v2=False):
-    """Fetch data from MongoDB Atlas API
+def fetch_data(endpoint, params=None, use_v2=False, max_retries=10, retry_delay=2):
+    """Fetch data from MongoDB Atlas API with retry logic and jitter
 
     Args:
         endpoint: API endpoint path
         params: Query parameters
         use_v2: Use v2 API (for Query Insights), otherwise use v1.0
+        max_retries: Maximum number of retry attempts for transient errors (default: 10)
+        retry_delay: Base delay between retries in seconds (default: 2)
+
+    Retry strategy:
+        - Retries up to 10 times on 5xx errors and 429 rate limiting
+        - Uses base delay + random jitter (3-5s) to avoid thundering herd
+        - Does NOT retry on 4xx client errors (except 429)
     """
+    import random  # Import here to avoid IDE removing unused import
+
     base_url = BASE_URL_V2 if use_v2 else BASE_URL_V1
     url = f"{base_url}/{endpoint}"
 
@@ -172,9 +184,53 @@ def fetch_data(endpoint, params=None, use_v2=False):
         "Content-Type": "application/json"
     }
 
-    response = requests.get(url, auth=HTTPDigestAuth(PUBLIC_KEY, PRIVATE_KEY), params=params, headers=headers)
-    response.raise_for_status()
-    return response.json()
+    for attempt in range(max_retries):
+        print(f"      [RETRY DEBUG] Attempt {attempt + 1}/{max_retries} - Making request...", flush=True)
+        try:
+            response = requests.get(url, auth=HTTPDigestAuth(PUBLIC_KEY, PRIVATE_KEY), params=params, headers=headers)
+            print(f"      [RETRY DEBUG] Got response status: {response.status_code}", flush=True)
+            response.raise_for_status()
+            print(f"      [RETRY DEBUG] Request successful!", flush=True)
+            return response.json()
+        except (requests.exceptions.HTTPError, requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+            # Determine if we should retry
+            should_retry = False
+            error_type = type(e).__name__
+            print(f"      [RETRY DEBUG] Caught exception: {error_type} - {str(e)[:60]}", flush=True)
+            
+            if isinstance(e, requests.exceptions.HTTPError):
+                status_code = e.response.status_code if e.response else 0
+                print(f"      [RETRY DEBUG] HTTP status code: {status_code}", flush=True)
+                # Retry on 5xx server errors and 429 rate limiting
+                if status_code in [500, 502, 503, 504, 429]:
+                    should_retry = True
+                    error_type = f"Server error ({status_code})"
+                    print(f"      [RETRY DEBUG] Will retry (5xx or 429)", flush=True)
+                else:
+                    print(f"      [RETRY DEBUG] Will NOT retry (client error)", flush=True)
+            else:
+                # Always retry on connection errors and timeouts
+                should_retry = True
+                print(f"      [RETRY DEBUG] Will retry (connection/timeout)", flush=True)
+            
+            if should_retry and attempt < max_retries - 1:
+                # Add random jitter (3-5 seconds) to avoid thundering herd
+                jitter = random.uniform(3, 5)
+                wait_time = retry_delay + jitter
+                print(f"      ⚠️ {error_type}, retrying in {wait_time:.1f}s... (attempt {attempt + 1}/{max_retries})", flush=True)
+                print(f"      [RETRY DEBUG] Sleeping for {wait_time:.1f}s...", flush=True)
+                time.sleep(wait_time)
+                print(f"      [RETRY DEBUG] Woke up, continuing to next attempt", flush=True)
+                # Continue to next iteration
+            elif should_retry:
+                # Last attempt failed
+                print(f"      ❌ {error_type}, all {max_retries} retries exhausted", flush=True)
+                raise
+            else:
+                # Don't retry client errors (4xx except 429)
+                print(f"      [RETRY DEBUG] Raising exception (not retrying)", flush=True)
+                raise
+
 
 def fetch_full_query_shape(query_shape_hash):
     """Fetch the full query shape using the queryShapeHash"""
@@ -260,18 +316,19 @@ def run_master_diagnostic():
             print(f"✓ Using configured process: {PROCESS_ID}")
 
         # 1. Fetch Telemetry & Advisor Data
-        # Try Query Insights / Slow Query Logs (may not be available on all clusters)
+        # Fetch BOTH Query Shapes and Slow Query Logs independently
         shapes = []
-        slow_queries = []
+        slow_queries_list = []
+        query_shapes_success = False
 
         print(f"\n📊 Fetching query performance data...")
 
-        # Step 1: Try Query Shape Insights Summaries (most comprehensive)
+        # Step 1: Try Query Shape Insights Summaries
+        print(f"\n   📈 Step 1: Fetching Query Shape Insights...")
         try:
-            print(f"   Step 1: Fetching query shape insights summaries...")
             summaries_data = fetch_data(f"clusters/{CLUSTER_NAME}/queryShapeInsights/summaries", params={'nSummaries': 500}, use_v2=True)
             summaries_list = summaries_data.get('summaries', [])
-            print(f"✓ Found {len(summaries_list)} query shape summaries")
+            print(f"   ✓ Found {len(summaries_list)} query shape summaries")
 
             # Extract data from summaries
             if summaries_list:
@@ -293,54 +350,69 @@ def run_master_diagnostic():
                         'keysExaminedRatio': summary.get('keysExaminedRatio', 0),
                         'bytesRead': summary.get('bytesRead', 0),
                         'systemQuery': summary.get('systemQuery', False),
+                        'source': 'query_shapes',  # Track source
                     })
-
-                print(f"✓ Successfully extracted {len(shapes)} query shapes from summaries")
+                query_shapes_success = True
+                print(f"   ✓ Successfully extracted {len(shapes)} query shapes")
 
         except Exception as e:
             print(f"   ✗ Query Shapes API failed: {str(e)[:80]}")
-            print(f"   Falling back to Slow Query Logs from all processes...")
+            print(f"   ℹ️  This may be a temporary Atlas issue")
 
-            # Fallback to Slow Query Logs from all processes
-            for i, pid in enumerate(process_ids, 1):
-                try:
-                    print(f"      [{i}/{len(process_ids)}] Fetching slow queries from {pid[:40]}...")
-                    slow_query_data = fetch_data(f"processes/{pid}/performanceAdvisor/slowQueryLogs", params={}, use_v2=False)
-                    slow_queries = slow_query_data.get('slowQueries', [])
-                    print(f"         Found {len(slow_queries)} slow queries")
+        # Step 2: ALWAYS fetch Slow Query Logs (independent of Query Shapes)
+        print(f"\n   📋 Step 2: Fetching Slow Query Logs from all processes...")
+        total_slow_queries = 0
+        for i, pid in enumerate(process_ids, 1):
+            try:
+                print(f"      [{i}/{len(process_ids)}] Fetching from {pid[:40]}...")
+                slow_query_data = fetch_data(f"processes/{pid}/performanceAdvisor/slowQueryLogs", params={}, use_v2=False)
+                process_slow_queries = slow_query_data.get('slowQueries', [])
+                print(f"         Found {len(process_slow_queries)} slow queries")
+                total_slow_queries += len(process_slow_queries)
 
-                    for sq in slow_queries:
-                        shapes.append({
-                            'namespace': sq.get('namespace', 'unknown'),
-                            'command': 'unknown',
-                            'queryShape': '',
-                            'p99ExecutionTimeMicros': sq.get('millis', 0) * 1000
-                        })
-                except Exception as e2:
-                    print(f"         ✗ Failed: {str(e2)[:60]}")
+                for sq in process_slow_queries:
+                    slow_queries_list.append({
+                        'namespace': sq.get('namespace', 'unknown'),
+                        'command': sq.get('command', 'unknown'),
+                        'queryShape': sq.get('rawQuery', ''),
+                        'millis': sq.get('millis', 0),
+                        'nreturned': sq.get('nreturned', 0),
+                        'nscanned': sq.get('nscanned', 0),
+                        'ts': sq.get('ts', ''),
+                        'source': 'slow_query_logs',
+                    })
+            except Exception as e2:
+                print(f"         ✗ Failed: {str(e2)[:60]}")
 
-            if shapes:
-                print(f"✓ Total slow queries collected: {len(shapes)}")
+        if slow_queries_list:
+            print(f"   ✓ Total slow query logs collected: {total_slow_queries}")
+        else:
+            print(f"   ℹ️  No slow query logs found (queries may be fast enough)")
 
-        if not shapes:
-            print(f"⚠️  No query performance data available")
+        # Summary of data collection
+        print(f"\n   📊 Data Collection Summary:")
+        print(f"      Query Shapes: {len(shapes)} {'✓' if query_shapes_success else '✗'}")
+        print(f"      Slow Query Logs: {len(slow_queries_list)}")
+
+        if not shapes and not slow_queries_list:
+            print(f"\n⚠️  No query performance data available")
             print(f"   Note: Query data requires recent query activity on the cluster")
 
         # Performance Advisor - collect from all processes
-        print(f"\n💡 Fetching performance advisor suggestions from all processes...")
+        # Controlled by ENABLE_PERFORMANCE_ADVISOR flag at top of file
         suggestions = []
-
-        for i, pid in enumerate(process_ids, 1):
-            try:
-                print(f"   [{i}/{len(process_ids)}] Fetching suggestions from {pid[:40]}...")
-                advisor_data = fetch_data(f"processes/{pid}/performanceAdvisor/suggestedIndexes", use_v2=False)
-                process_suggestions = advisor_data.get('suggestedIndexes', [])
-                suggestions.extend(process_suggestions)
-                print(f"      Found {len(process_suggestions)} suggestions")
-            except Exception as e:
-                print(f"      ✗ Failed: {str(e)[:60]}")
-
-        print(f"✓ Total index suggestions collected: {len(suggestions)}")
+        if ENABLE_PERFORMANCE_ADVISOR:
+            print(f"\n💡 Fetching performance advisor suggestions from all processes...")
+            for i, pid in enumerate(process_ids, 1):
+                try:
+                    print(f"   [{i}/{len(process_ids)}] Fetching suggestions from {pid[:40]}...")
+                    advisor_data = fetch_data(f"processes/{pid}/performanceAdvisor/suggestedIndexes", use_v2=False)
+                    process_suggestions = advisor_data.get('suggestedIndexes', [])
+                    suggestions.extend(process_suggestions)
+                    print(f"      Found {len(process_suggestions)} suggestions")
+                except Exception as e:
+                    print(f"      ✗ Failed: {str(e)[:60]}")
+            print(f"✓ Total index suggestions collected: {len(suggestions)}")
         
         # Group shapes by namespace, command, and query shape
         grouped_shapes = defaultdict(list)
@@ -587,8 +659,8 @@ def run_master_diagnostic():
                         for issue in stats['issues']:
                             print(f"      {issue}")
 
-                    if 'fixes' in stats and stats['fixes']:
-                        print(f"   💡 Index Suggestions:")
+                    if ENABLE_PERFORMANCE_ADVISOR and 'fixes' in stats and stats['fixes']:
+                        print(f"   💡 Index Suggestions (⚠️ Review before implementing!):")
                         for fix in stats['fixes']:
                             print(f"      • Impact: {fix.get('impact', 'N/A')} - {fix.get('id', 'N/A')}")
                     print()
@@ -603,15 +675,25 @@ def run_master_diagnostic():
         print("\n" + "-"*80)
         print("💡 SUMMARY\n")
 
-        if suggestions:
-            print(f"   Total Index Suggestions: {len(suggestions)}")
-            for suggestion in suggestions:
-                ns = suggestion.get('namespace', 'unknown')
-                print(f"   • {ns}: Impact {suggestion.get('impact', 'N/A')}")
-        else:
-            print("   No index suggestions from Performance Advisor.")
+        # Performance Advisor summary - controlled by ENABLE_PERFORMANCE_ADVISOR flag
+        if ENABLE_PERFORMANCE_ADVISOR:
+            if suggestions:
+                print(f"   Total Index Suggestions: {len(suggestions)}")
+                print()
+                print("   ⚠️  WARNING: Do NOT implement these suggestions without expert review!")
+                print("   • Indexes have storage and write-performance costs")
+                print("   • Suggestions may not account for your full workload")
+                print("   • Consider compound indexes instead of multiple single-field indexes")
+                print("   • Consult your DBA or MongoDB expert before adding indexes")
+                print()
+                for suggestion in suggestions:
+                    ns = suggestion.get('namespace', 'unknown')
+                    print(f"   • {ns}: Impact {suggestion.get('impact', 'N/A')}")
+            else:
+                print("   No index suggestions from Performance Advisor.")
 
-        print(f"   Total Query Shapes Analyzed: {len(shapes)}")
+        print(f"   Query Shapes Analyzed: {len(shapes)}")
+        print(f"   Slow Query Logs Found: {len(slow_queries_list)}")
         print(f"   Total Collections: {len(by_namespace)}")
 
         print("\n" + "="*80 + "\n")
@@ -709,8 +791,8 @@ def run_master_diagnostic():
                             for issue in stats['issues']:
                                 f.write(f"- {issue}\n")
 
-                        if 'fixes' in stats and stats['fixes']:
-                            f.write(f"\n**💡 Index Suggestions:**\n")
+                        if ENABLE_PERFORMANCE_ADVISOR and 'fixes' in stats and stats['fixes']:
+                            f.write(f"\n**💡 Index Suggestions (⚠️ Review before implementing!):**\n")
                             for fix in stats['fixes']:
                                 f.write(f"- Impact: {fix.get('impact', 'N/A')} - `{fix.get('id', 'N/A')}`\n")
 
@@ -719,9 +801,17 @@ def run_master_diagnostic():
                 f.write("*No query shape data available. Query Insights may not be enabled or no queries have been executed recently.*\n\n")
 
             f.write("\n## 💡 Summary\n\n")
-            f.write(f"- **Total Query Shapes Analyzed:** {len(shapes)}\n")
+            f.write(f"- **Query Shapes Analyzed:** {len(shapes)}\n")
+            f.write(f"- **Slow Query Logs Found:** {len(slow_queries_list)}\n")
             f.write(f"- **Total Collections:** {len(by_namespace) if group_stats else 0}\n")
-            f.write(f"- **Total Index Suggestions:** {len(suggestions)}\n")
+            if ENABLE_PERFORMANCE_ADVISOR:
+                f.write(f"- **Total Index Suggestions:** {len(suggestions)}\n")
+                if suggestions:
+                    f.write(f"\n> ⚠️ **WARNING:** Do NOT implement index suggestions without expert review!\n")
+                    f.write(f"> - Indexes have storage and write-performance costs\n")
+                    f.write(f"> - Suggestions may not account for your full workload\n")
+                    f.write(f"> - Consider compound indexes instead of multiple single-field indexes\n")
+                    f.write(f"> - Consult your DBA or MongoDB expert before adding indexes\n")
 
         print(f"✅ Report exported to {md_filename}")
 
