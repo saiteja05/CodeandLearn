@@ -24,3 +24,4 @@ hs_err_pid*
 replay_pid*
 mongo_performance_report.csv
 mongo_performance_report.md
+*.pyc
