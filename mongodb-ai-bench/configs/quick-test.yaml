@@ -1,0 +1,47 @@
+mongodb:
+  uri: "mongodb://localhost:27017"  # overridden by MONGODB_URI env var or .env file
+  database: "ai_chatbot_bench_test"
+  write_concern: "majority"         # "1" = primary only, "2" = 2 members, "majority" = most durable
+  read_preference: "secondaryPreferred"  # primary, primaryPreferred, secondary, secondaryPreferred, nearest
+  max_pool_size: 100                # max concurrent TCP connections to cluster
+  min_pool_size: 10                 # pre-warmed connections kept alive even when idle
+  max_conn_idle_time: "30s"         # close connections idle longer than this
+  connect_timeout: "10s"            # max wait for new TCP connection
+  socket_timeout: "30s"             # max wait for any single operation on the wire
+
+workload:
+  track_conversations: true         # true = full model (messages + conversations collections)
+                                    # false = messages only (no conversation creates/updates)
+  continue_conversation_pct: 70     # % of turns that continue existing conversation vs starting new
+  web_search_pct: 10                # % of very-long responses that include web search result docs
+  models:
+    - "mongo-v1"
+  response_size_distribution:       # must sum to 100
+    short_pct: 30                   # ~100-500 bytes
+    medium_pct: 40                  # ~500 bytes - 3 KB
+    long_pct: 20                    # ~3-10 KB
+    very_long_pct: 10               # ~10-100 KB
+
+phases:                             # run sequentially; VU count carries across phases
+  - name: "warmup"
+    duration: "30s"
+    target_virtual_users: 10
+    ramp: "linear"                  # linear = gradual ramp, step = 10 jumps, none = instant
+
+  - name: "load"
+    duration: "2m"
+    target_virtual_users: 50
+    ramp: "linear"
+
+  - name: "peak"
+    duration: "2m"
+    target_virtual_users: 100
+    ramp: "linear"
+
+metrics:
+  output_dir: "results"             # directory for CSV files and markdown report
+  csv_interval: "1s"                # how often to write per-operation rows to timeseries CSV
+  stats_interval: "5s"              # how often to refresh the terminal dashboard
+  dashboard_enabled: true           # false for headless/scripted runs
+  collection_stats_enabled: true    # periodically run collStats to track doc count, storage size
+  collection_stats_interval: "30s"  # how often to poll collStats (lightweight metadata command)

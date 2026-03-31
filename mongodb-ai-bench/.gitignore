@@ -1,0 +1,5 @@
+bin/
+results/
+collected_results_*/
+*.log
+.env
