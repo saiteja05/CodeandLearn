@@ -32,7 +32,7 @@ make clean          # remove bin/ and results/
 make deps           # go mod tidy
 ```
 
-### Deploy to EC2
+### Deploy to EC2 (Quick — Single Instance)
 
 ```bash
 # 1. Cross-compile for Linux
@@ -49,6 +49,8 @@ export MONGODB_URI="mongodb+srv://<username>:<password>@cluster.mongodb.net/"
 ```
 
 No Go installation needed on the EC2 instance — the binary is self-contained. The URI is read at runtime from the `MONGODB_URI` env var (or a `.env` file in the working directory).
+
+For multi-day uninterrupted runs, use the Terraform-based deployment below instead — it includes auto-restart, result backup, and disk monitoring.
 
 ## How It Works
 
@@ -863,26 +865,110 @@ Phases run **sequentially**. VU count carries across phases (no reset between th
 | `collection_stats_enabled` | `false` | Whether to periodically run MongoDB's `collStats` command on the `messages` and `conversations` collections during the benchmark. Captures document count, storage size, index size, and average document size. |
 | `collection_stats_interval` | `60s` | How often to poll `collStats`. Only applies when `collection_stats_enabled: true`. This is a lightweight metadata command, but no need to run it every second. |
 
-## AWS Deployment
+## AWS Deployment (Uninterrupted Multi-Day Runs)
 
-See `deploy/` for Terraform configs and deployment scripts.
+The Terraform setup provisions EC2 instances with safeguards for long-running benchmarks: systemd process management, automatic S3 result backup, disk monitoring, and termination protection.
+
+### Prerequisites
+
+1. AWS CLI configured with appropriate credentials
+2. An S3 bucket for the benchmark binary, config, and results
+3. An EC2 key pair for SSH access
+4. Terraform >= 1.5
+
+### Step-by-Step Deployment
+
+#### 1. Build and upload the binary + config to S3
+
+```bash
+make cross-linux
+
+aws s3 cp bin/mongodb-ai-bench-linux-amd64 s3://my-bench-bucket/mongodb-ai-bench-linux-amd64
+aws s3 cp configs/full-run.yaml s3://my-bench-bucket/full-run.yaml
+```
+
+#### 2. Provision EC2 instances with Terraform
 
 ```bash
 cd deploy/terraform
 terraform init
 
-# Required variables: allowed_ssh_cidr, results_bucket, key_name, bench_binary_s3, bench_config_s3
 terraform apply \
-  -var="allowed_ssh_cidr=203.0.113.0/24" \
-  -var="results_bucket=my-bench-results" \
+  -var="allowed_ssh_cidr=203.0.113.50/32" \
+  -var="results_bucket=my-bench-bucket" \
   -var="key_name=my-keypair" \
-  -var="bench_binary_s3=s3://my-bucket/mongodb-ai-bench-linux-amd64" \
-  -var="bench_config_s3=s3://my-bucket/full-run.yaml"
-
-# Deploy and run across EC2 instances
-cd ../scripts
-./run-distributed.sh <key-file> <ip1> <ip2> ...
+  -var="bench_binary_s3=s3://my-bench-bucket/mongodb-ai-bench-linux-amd64" \
+  -var="bench_config_s3=s3://my-bench-bucket/full-run.yaml"
 ```
+
+Terraform creates the VPC, security groups, IAM roles, and EC2 instances. Each instance automatically downloads the binary and config from S3, installs a systemd service, sets up cron-based S3 sync, and tunes kernel parameters.
+
+#### 3. Start the benchmark
+
+```bash
+cd ../scripts
+
+# Provide your MongoDB URI — it's written to a .env file on each instance, never passed as a CLI arg
+./run-distributed.sh my-key.pem "mongodb+srv://user:pass@cluster.mongodb.net/" <ip1> <ip2> ...
+```
+
+This SSH-es into each instance, writes the `.env` file with the MongoDB URI, and starts the `mongodb-bench` systemd service.
+
+#### 4. Monitor the run
+
+```bash
+# Live logs via journalctl
+ssh -i my-key.pem ec2-user@<ip> 'sudo journalctl -u mongodb-bench -f'
+
+# Or tail the log file directly
+ssh -i my-key.pem ec2-user@<ip> 'sudo tail -f /opt/mongodb-bench/bench.log'
+
+# Service status (active, uptime, restarts)
+ssh -i my-key.pem ec2-user@<ip> 'sudo systemctl status mongodb-bench'
+
+# Disk usage
+ssh -i my-key.pem ec2-user@<ip> 'df -h /opt/mongodb-bench'
+```
+
+#### 5. Collect results when complete
+
+Results are synced to S3 every 5 minutes automatically. You can collect them from S3 without SSH access to the instances:
+
+```bash
+# From S3 (preferred — works even if instances are terminated)
+./collect-results.sh --s3 my-bench-bucket 4
+
+# Or from instances directly via SSH
+./collect-results.sh my-key.pem <ip1> <ip2> ...
+
+# Generate charts from merged CSV
+python3 analysis/plot.py collected_results_*/merged_timeseries.csv
+```
+
+#### 6. Tear down
+
+```bash
+cd deploy/terraform
+
+# Disable termination protection first (it's on by default)
+terraform apply -var="termination_protection=false" ...
+
+terraform destroy
+```
+
+### What the Safeguards Do
+
+| Safeguard | What | Why |
+|-----------|------|-----|
+| **systemd service** | `mongodb-bench.service` with `Restart=on-failure` | Auto-restarts the benchmark if it crashes or OOMs. Survives SSH disconnects. |
+| **S3 result sync** | Cron job every 5 minutes syncing `results/` to S3 | Results survive instance termination. No manual `scp` needed. |
+| **S3 log sync** | Cron job every 15 minutes uploading `bench.log` to S3 | Remote debugging without SSH. |
+| **Final sync on shutdown** | `bench-final-sync.service` runs on halt/reboot | Flushes remaining results to S3 before the instance goes down. |
+| **Disk watchdog** | Cron job every minute checking disk usage | Stops the benchmark at 90% disk to prevent data loss from a full filesystem. |
+| **Persistent sysctl** | Written to `/etc/sysctl.d/99-bench.conf` | Kernel tuning survives reboots (AWS maintenance events). |
+| **Persistent file limits** | Written to `/etc/security/limits.d/99-bench.conf` | 65K open file descriptors survive reboots. |
+| **Termination protection** | `disable_api_termination = true` on EC2 instances | Prevents accidental `terraform destroy` or console clicks from killing a running benchmark. |
+| **Configurable disk size** | `root_volume_size_gb` variable (default 100 GB) | Scale disk for multi-day runs with 1s CSV interval. |
 
 ### Terraform Variables
 
@@ -897,6 +983,8 @@ cd ../scripts
 | `instance_type` | No | `c6i.4xlarge` | EC2 instance type. |
 | `client_count` | No | `4` | Number of EC2 benchmark client instances. |
 | `assign_public_ip` | No | `true` | Assign public IPs to instances. Set `false` if using VPN/SSM. |
+| `termination_protection` | No | `true` | Prevent accidental instance termination. Must be set to `false` before `terraform destroy`. |
+| `root_volume_size_gb` | No | `100` | Root EBS volume size in GB. 200 GB recommended for multi-day runs with 1s CSV interval. |
 
 ## Security
 

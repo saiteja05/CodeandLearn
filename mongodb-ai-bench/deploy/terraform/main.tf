@@ -156,11 +156,13 @@ resource "aws_instance" "bench_client" {
   subnet_id            = aws_subnet.bench[count.index % 2].id
   iam_instance_profile = aws_iam_instance_profile.bench_client.name
 
+  disable_api_termination = var.termination_protection
+
   vpc_security_group_ids = [aws_security_group.bench_client.id]
 
   root_block_device {
     encrypted   = true
-    volume_size = 50
+    volume_size = var.root_volume_size_gb
     volume_type = "gp3"
     iops        = 3000
     throughput  = 125
@@ -171,6 +173,7 @@ resource "aws_instance" "bench_client" {
     bench_config_s3 = var.bench_config_s3
     client_id       = count.index
     total_clients   = var.client_count
+    results_bucket  = var.results_bucket
   }))
 
   tags = merge(var.tags, {

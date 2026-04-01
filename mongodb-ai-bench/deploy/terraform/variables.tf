@@ -64,6 +64,18 @@ variable "assign_public_ip" {
   default     = true
 }
 
+variable "termination_protection" {
+  description = "Enable EC2 termination protection to prevent accidental instance deletion during long runs."
+  type        = bool
+  default     = true
+}
+
+variable "root_volume_size_gb" {
+  description = "Root EBS volume size in GB. 50 GB is enough for quick tests; 200 GB recommended for multi-day runs with 1s CSV interval."
+  type        = number
+  default     = 100
+}
+
 variable "tags" {
   description = "Tags to apply to all resources"
   type        = map(string)
