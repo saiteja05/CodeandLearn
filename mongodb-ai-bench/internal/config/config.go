@@ -3,7 +3,9 @@ package config
 import (
 	"bufio"
 	"fmt"
+	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -32,6 +34,7 @@ type MongoDBConfig struct {
 type WorkloadConfig struct {
 	ContinueConversationPct  int                      `yaml:"continue_conversation_pct"`
 	WebSearchPct             int                      `yaml:"web_search_pct"`
+	MaxHistoryMessages       int                      `yaml:"max_history_messages"`
 	TrackConversations       *bool                    `yaml:"track_conversations"`
 	Models                   []string                 `yaml:"models"`
 	ResponseSizeDistribution ResponseSizeDistribution `yaml:"response_size_distribution"`
@@ -96,6 +99,11 @@ func (m MetricsConfig) ParsedCollectionStatsInterval() (time.Duration, error) {
 }
 
 func Load(path string) (*Config, error) {
+	ext := strings.ToLower(filepath.Ext(path))
+	if ext != ".yaml" && ext != ".yml" {
+		return nil, fmt.Errorf("config file must have .yaml or .yml extension, got %q", ext)
+	}
+
 	loadEnvFile(".env")
 
 	data, err := os.ReadFile(path)
@@ -120,6 +128,14 @@ func Load(path string) (*Config, error) {
 	return &cfg, nil
 }
 
+// allowedEnvKeys defines the only environment variables loadEnvFile is permitted to set.
+// This prevents a malicious .env file from overriding security-sensitive vars like PATH.
+var allowedEnvKeys = map[string]bool{
+	"MONGODB_URI": true,
+}
+
+// loadEnvFile reads a .env file and sets only whitelisted environment variables.
+// Must only be called from the main goroutine before any goroutines are spawned.
 func loadEnvFile(path string) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -139,6 +155,9 @@ func loadEnvFile(path string) {
 		}
 		key = strings.TrimSpace(key)
 		val = strings.TrimSpace(val)
+		if !allowedEnvKeys[key] {
+			continue
+		}
 		if os.Getenv(key) == "" {
 			os.Setenv(key, val)
 		}
@@ -169,6 +188,7 @@ func (c *Config) Validate() error {
 	}
 	if c.MongoDB.WriteConcern == "" {
 		c.MongoDB.WriteConcern = "1"
+		slog.Warn("write_concern defaulted to 1: writes acknowledged before replication; set to \"majority\" for durability")
 	}
 	if c.MongoDB.ReadPreference == "" {
 		c.MongoDB.ReadPreference = "primaryPreferred"
@@ -218,8 +238,20 @@ func (c *Config) Validate() error {
 	if c.Workload.ContinueConversationPct == 0 {
 		c.Workload.ContinueConversationPct = 70
 	}
+	if c.Workload.ContinueConversationPct < 0 || c.Workload.ContinueConversationPct > 100 {
+		return fmt.Errorf("continue_conversation_pct must be 0-100, got %d", c.Workload.ContinueConversationPct)
+	}
 	if c.Workload.WebSearchPct == 0 {
 		c.Workload.WebSearchPct = 10
+	}
+	if c.Workload.WebSearchPct < 0 || c.Workload.WebSearchPct > 100 {
+		return fmt.Errorf("web_search_pct must be 0-100, got %d", c.Workload.WebSearchPct)
+	}
+	if c.Workload.MaxHistoryMessages == 0 {
+		c.Workload.MaxHistoryMessages = 500
+	}
+	if c.Workload.MaxHistoryMessages < 0 {
+		return fmt.Errorf("max_history_messages must be positive, got %d", c.Workload.MaxHistoryMessages)
 	}
 	if len(c.Workload.Models) == 0 {
 		c.Workload.Models = []string{"mongo-v1"}
@@ -227,6 +259,9 @@ func (c *Config) Validate() error {
 
 	if c.Metrics.OutputDir == "" {
 		c.Metrics.OutputDir = "results"
+	}
+	if filepath.IsAbs(c.Metrics.OutputDir) {
+		return fmt.Errorf("metrics.output_dir must be a relative path, got %q", c.Metrics.OutputDir)
 	}
 	if c.Metrics.CSVInterval == "" {
 		c.Metrics.CSVInterval = "1s"

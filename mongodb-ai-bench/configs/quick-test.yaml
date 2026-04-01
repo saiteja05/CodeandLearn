@@ -10,7 +10,7 @@ mongodb:
   socket_timeout: "30s"             # max wait for any single operation on the wire
 
 workload:
-  track_conversations: true         # true = full model (messages + conversations collections)
+  track_conversations: false         # true = full model (messages + conversations collections)
                                     # false = messages only (no conversation creates/updates)
   continue_conversation_pct: 70     # % of turns that continue existing conversation vs starting new
   web_search_pct: 10                # % of very-long responses that include web search result docs
@@ -42,6 +42,5 @@ metrics:
   output_dir: "results"             # directory for CSV files and markdown report
   csv_interval: "1s"                # how often to write per-operation rows to timeseries CSV
   stats_interval: "5s"              # how often to refresh the terminal dashboard
-  dashboard_enabled: true           # false for headless/scripted runs
-  collection_stats_enabled: true    # periodically run collStats to track doc count, storage size
+  dashboard_enabled: false           # false for headless/scripted runs
   collection_stats_interval: "30s"  # how often to poll collStats (lightweight metadata command)

@@ -43,6 +43,27 @@ variable "bench_config_s3" {
   type        = string
 }
 
+variable "allowed_ssh_cidr" {
+  description = "CIDR block allowed to SSH into benchmark clients (e.g. your office IP as x.x.x.x/32)"
+  type        = string
+
+  validation {
+    condition     = can(cidrhost(var.allowed_ssh_cidr, 0))
+    error_message = "allowed_ssh_cidr must be a valid CIDR block."
+  }
+}
+
+variable "results_bucket" {
+  description = "S3 bucket name for storing benchmark results"
+  type        = string
+}
+
+variable "assign_public_ip" {
+  description = "Whether to assign public IPs to benchmark instances. Set to false if using VPN/SSM for access."
+  type        = bool
+  default     = true
+}
+
 variable "tags" {
   description = "Tags to apply to all resources"
   type        = map(string)

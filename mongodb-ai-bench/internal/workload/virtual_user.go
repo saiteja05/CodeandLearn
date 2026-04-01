@@ -13,13 +13,13 @@ import (
 const opTimeout = 30 * time.Second
 
 type VirtualUser struct {
-	id                     int
-	userID                 uuid.UUID
-	runner                 *ConversationRunner
-	msgGen                 *MessageGenerator
-	logger                 *slog.Logger
-	collector              *metrics.Collector
-	conversationsEnabled   bool
+	id                   int
+	userID               uuid.UUID
+	runner               *ConversationRunner
+	msgGen               *MessageGenerator
+	logger               *slog.Logger
+	collector            *metrics.Collector
+	conversationsEnabled bool
 }
 
 type VirtualUserParams struct {
@@ -28,13 +28,14 @@ type VirtualUserParams struct {
 	Collector            *metrics.Collector
 	MsgGen               *MessageGenerator
 	ConversationsEnabled bool
+	MaxHistoryMessages   int
 }
 
 func NewVirtualUserWithParams(p VirtualUserParams) *VirtualUser {
 	return &VirtualUser{
 		id:                   p.ID,
 		userID:               uuid.New(),
-		runner:               NewConversationRunner(p.PoolMgr, p.MsgGen, p.Collector),
+		runner:               NewConversationRunner(p.PoolMgr, p.MsgGen, p.Collector, p.MaxHistoryMessages),
 		msgGen:               p.MsgGen,
 		logger:               slog.Default().With("vu", p.ID),
 		collector:            p.Collector,

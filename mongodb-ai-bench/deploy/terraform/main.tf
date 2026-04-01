@@ -1,5 +1,16 @@
 terraform {
   required_version = ">= 1.5"
+
+  # TODO: Add a remote backend to avoid local terraform.tfstate which may
+  # contain sensitive resource attributes. Example:
+  #
+  # backend "s3" {
+  #   bucket  = "your-terraform-state-bucket"
+  #   key     = "mongodb-bench/terraform.tfstate"
+  #   region  = "us-east-1"
+  #   encrypt = true
+  # }
+
   required_providers {
     aws = {
       source  = "hashicorp/aws"
@@ -45,7 +56,7 @@ resource "aws_subnet" "bench" {
   vpc_id                  = aws_vpc.bench.id
   cidr_block              = cidrsubnet(aws_vpc.bench.cidr_block, 8, count.index)
   availability_zone       = data.aws_availability_zones.available.names[count.index]
-  map_public_ip_on_launch = true
+  map_public_ip_on_launch = var.assign_public_ip
 
   tags = merge(var.tags, { Name = "mongodb-bench-subnet-${count.index}" })
 }
@@ -79,8 +90,8 @@ resource "aws_security_group" "bench_client" {
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-    description = "SSH access"
+    cidr_blocks = [var.allowed_ssh_cidr]
+    description = "SSH access from allowed CIDR only"
   }
 
   egress {
@@ -124,7 +135,10 @@ resource "aws_iam_role_policy" "bench_s3_access" {
         "s3:PutObject",
         "s3:ListBucket"
       ]
-      Resource = ["*"]
+      Resource = [
+        "arn:aws:s3:::${var.results_bucket}",
+        "arn:aws:s3:::${var.results_bucket}/*"
+      ]
     }]
   })
 }
@@ -145,6 +159,7 @@ resource "aws_instance" "bench_client" {
   vpc_security_group_ids = [aws_security_group.bench_client.id]
 
   root_block_device {
+    encrypted   = true
     volume_size = 50
     volume_type = "gp3"
     iops        = 3000
@@ -159,7 +174,7 @@ resource "aws_instance" "bench_client" {
   }))
 
   tags = merge(var.tags, {
-    Name      = "mongodb-bench-client-${count.index}"
-    ClientID  = count.index
+    Name     = "mongodb-bench-client-${count.index}"
+    ClientID = count.index
   })
 }

@@ -2,8 +2,10 @@ package pool
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"strconv"
+	"strings"
 	"sync/atomic"
 
 	"github.com/mongodb-ai-bench/internal/config"
@@ -80,6 +82,17 @@ func (m *Manager) buildClientOptions() (*options.ClientOptions, error) {
 		SetTimeout(socketTimeout).
 		SetPoolMonitor(poolMonitor).
 		SetCompressors([]string{"zstd", "snappy", "zlib"})
+
+	// Enforce minimum TLS 1.2 for plain mongodb:// remote connections.
+	// Skip for mongodb+srv:// which already mandates TLS and may have
+	// URI-derived TLS settings (tlsCAFile, etc.) that SetTLSConfig would override.
+	if strings.HasPrefix(m.cfg.URI, "mongodb://") &&
+		!strings.HasPrefix(m.cfg.URI, "mongodb://localhost") &&
+		!strings.HasPrefix(m.cfg.URI, "mongodb://127.0.0.1") {
+		opts.SetTLSConfig(&tls.Config{
+			MinVersion: tls.VersionTLS12,
+		})
+	}
 
 	wc, err := parseWriteConcern(m.cfg.WriteConcern)
 	if err != nil {

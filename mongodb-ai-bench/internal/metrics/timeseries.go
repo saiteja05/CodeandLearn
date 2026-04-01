@@ -3,6 +3,7 @@ package metrics
 import (
 	"encoding/csv"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
@@ -18,6 +19,7 @@ type TimeSeriesWriter struct {
 	stopCh    chan struct{}
 	doneCh    chan struct{}
 	phase     string
+	logger    *slog.Logger
 }
 
 func NewTimeSeriesWriter(outputDir string, collector *Collector, interval time.Duration) (*TimeSeriesWriter, error) {
@@ -51,6 +53,7 @@ func NewTimeSeriesWriter(outputDir string, collector *Collector, interval time.D
 		interval:  interval,
 		stopCh:    make(chan struct{}),
 		doneCh:    make(chan struct{}),
+		logger:    slog.Default().With("component", "timeseries"),
 	}, nil
 }
 
@@ -116,7 +119,9 @@ func (ts *TimeSeriesWriter) writeSnapshot() {
 		}
 
 		ts.mu.Lock()
-		ts.writer.Write(record)
+		if err := ts.writer.Write(record); err != nil {
+			ts.logger.Error("failed to write timeseries CSV record", "err", err)
+		}
 		ts.writer.Flush()
 		ts.mu.Unlock()
 	}

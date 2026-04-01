@@ -23,13 +23,13 @@ type PhaseInfo struct {
 }
 
 type VUManager struct {
-	mu         sync.Mutex
-	activeVUs  map[int]context.CancelFunc
-	nextID     int
-	poolMgr    *pool.Manager
-	collector  *metrics.Collector
+	mu          sync.Mutex
+	activeVUs   map[int]context.CancelFunc
+	nextID      int
+	poolMgr     *pool.Manager
+	collector   *metrics.Collector
 	workloadCfg config.WorkloadConfig
-	wg         sync.WaitGroup
+	wg          sync.WaitGroup
 }
 
 func NewVUManager(poolMgr *pool.Manager, collector *metrics.Collector, workloadCfg config.WorkloadConfig) *VUManager {
@@ -79,6 +79,7 @@ func (vm *VUManager) addVUs(ctx context.Context, count int) {
 			Collector:            vm.collector,
 			MsgGen:               msgGen,
 			ConversationsEnabled: vm.workloadCfg.ConversationsEnabled(),
+			MaxHistoryMessages:   vm.workloadCfg.MaxHistoryMessages,
 		})
 
 		vm.wg.Add(1)
@@ -115,10 +116,10 @@ func (vm *VUManager) StopAll() {
 }
 
 type ProgressiveRunner struct {
-	phases      []PhaseInfo
-	vuManager   *VUManager
-	collector   *metrics.Collector
-	logger      *slog.Logger
+	phases        []PhaseInfo
+	vuManager     *VUManager
+	collector     *metrics.Collector
+	logger        *slog.Logger
 	onPhaseChange func(phase string)
 }
 

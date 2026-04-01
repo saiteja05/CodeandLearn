@@ -10,7 +10,7 @@ Targets: **100K writes/sec**, **25K reads/sec**, running for **days** as data gr
 
 ```bash
 # 1. Set your MongoDB URI (Atlas or local)
-echo 'MONGODB_URI=mongodb+srv://user:pass@cluster.mongodb.net/' > .env
+echo 'MONGODB_URI=mongodb+srv://<username>:<password>@cluster.mongodb.net/' > .env
 
 # 2. Build and run the 5-minute smoke test
 make quick-test
@@ -44,7 +44,7 @@ scp configs/full-run.yaml ec2-user@<host>:~/
 
 # 3. SSH in and run
 ssh ec2-user@<host>
-export MONGODB_URI="mongodb+srv://user:pass@cluster.mongodb.net/"
+export MONGODB_URI="mongodb+srv://<username>:<password>@cluster.mongodb.net/"
 ./mongodb-ai-bench-linux-amd64 -config full-run.yaml
 ```
 
@@ -83,7 +83,7 @@ This produces a natural **4:1 write-to-read ratio**. Set `track_conversations: f
 
 | Setting | Where | What To Set |
 |---------|-------|-------------|
-| **MongoDB URI** | `.env` file or env var | `MONGODB_URI=mongodb+srv://user:pass@cluster.mongodb.net/` |
+| **MongoDB URI** | `.env` file or env var | `MONGODB_URI=mongodb+srv://<username>:<password>@cluster.mongodb.net/` |
 | **Database name** | YAML `mongodb.database` | Any name — collections are created automatically |
 | **Write concern** | YAML `mongodb.write_concern` | `"1"` for speed, `"majority"` for durability testing |
 | **Track conversations** | YAML `workload.track_conversations` | `true` = full model (5 ops/turn), `false` = messages only (2 ops/turn) |
@@ -485,15 +485,15 @@ db.messages.insertOne({
 
 #### 3. Read Conversation History (find, `messages` collection)
 
-Fetches all messages for the current conversation, sorted by time. This is the query that LLM backends run to build context for the next response. Uses the compound index `{ conversation_id: 1, create_time: 1 }` — a covered query + sort.
+Fetches messages for the current conversation, sorted by time, capped at `max_history_messages` (default 500). This is the query that LLM backends run to build context for the next response. Uses the compound index `{ conversation_id: 1, create_time: 1 }` — a covered query + sort.
 
 ```javascript
 db.messages.find(
   { conversation_id: "a1b2c3d4-..." }
-).sort({ create_time: 1 })
+).sort({ create_time: 1 }).limit(500)
 ```
 
-As conversations grow longer, this query returns more documents (2, 10, 50+ messages), so read latency naturally increases over time — exactly what happens in production.
+As conversations grow longer, this query returns more documents (2, 10, 50+ messages), so read latency naturally increases over time — exactly what happens in production. The limit bounds memory usage per query; set `max_history_messages` higher in the config if you need to benchmark unbounded reads.
 
 #### 4. Write Assistant Response (insert, `messages` collection)
 
@@ -833,6 +833,7 @@ See `configs/` for example configurations (`quick-test.yaml`, `default.yaml`, `f
 | `track_conversations` | `true` | Enables the full chatbot flow: create conversation → insert messages → update metadata. When `false`, fires standalone message inserts only (no `conversations` collection). |
 | `continue_conversation_pct` | `70` | Percentage of turns where a VU continues its existing conversation. The remaining percentage starts a new conversation. Controls conversation depth vs breadth. At 70%, median conversation length is ~6 messages. |
 | `web_search_pct` | `10` | Percentage of very-long assistant responses that include simulated web search result documents, making those documents larger and more complex. |
+| `max_history_messages` | `500` | Maximum number of messages returned when reading conversation history. Bounds memory usage per read query. Set higher for stress-testing very long conversations. |
 | `models` | `["mongo-v1"]` | List of model name strings randomly assigned to conversations. Metadata only — doesn't change behavior, but mimics real apps tracking which AI model served each response. |
 | `response_size_distribution` | see below | Controls the size mix of generated assistant response documents. Must sum to 100. |
 | `  short_pct` | `30` | Percentage of responses that are ~100-500 bytes. |
@@ -868,12 +869,66 @@ See `deploy/` for Terraform configs and deployment scripts.
 
 ```bash
 cd deploy/terraform
-terraform init && terraform apply
+terraform init
+
+# Required variables: allowed_ssh_cidr, results_bucket, key_name, bench_binary_s3, bench_config_s3
+terraform apply \
+  -var="allowed_ssh_cidr=203.0.113.0/24" \
+  -var="results_bucket=my-bench-results" \
+  -var="key_name=my-keypair" \
+  -var="bench_binary_s3=s3://my-bucket/mongodb-ai-bench-linux-amd64" \
+  -var="bench_config_s3=s3://my-bucket/full-run.yaml"
 
 # Deploy and run across EC2 instances
 cd ../scripts
-./run-distributed.sh
+./run-distributed.sh <key-file> <ip1> <ip2> ...
 ```
+
+### Terraform Variables
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `allowed_ssh_cidr` | Yes | — | CIDR block allowed to SSH into instances (e.g. `203.0.113.50/32` for a single IP). |
+| `results_bucket` | Yes | — | S3 bucket name for storing benchmark results. IAM policy is scoped to this bucket only. |
+| `key_name` | Yes | — | EC2 SSH key pair name. |
+| `bench_binary_s3` | Yes | — | S3 URI of the pre-built benchmark binary. |
+| `bench_config_s3` | Yes | — | S3 URI of the benchmark config YAML. |
+| `aws_region` | No | `us-east-1` | AWS region for benchmark clients. |
+| `instance_type` | No | `c6i.4xlarge` | EC2 instance type. |
+| `client_count` | No | `4` | Number of EC2 benchmark client instances. |
+| `assign_public_ip` | No | `true` | Assign public IPs to instances. Set `false` if using VPN/SSM. |
+
+## Security
+
+The following security measures are built into the project:
+
+### Credentials & Secrets
+
+- **MongoDB URI**: loaded from the `MONGODB_URI` environment variable or a local `.env` file, never from YAML configs. The `.env` file is in `.gitignore`.
+- **`.env` whitelist**: the `.env` loader only sets `MONGODB_URI`. Other keys are silently ignored to prevent overriding security-sensitive variables like `PATH`.
+- **Error sanitization**: MongoDB connection URIs are stripped from error messages before they reach metrics, dashboards, or reports.
+- **URI masking**: the orchestrator logs the connection URI with credentials removed.
+
+### Network & TLS
+
+- **TLS 1.2 minimum**: remote `mongodb://` connections enforce TLS 1.2+. `mongodb+srv://` connections (Atlas) use the driver's native TLS handling to preserve URI-derived settings (custom CAs, client certs). Localhost connections are unaffected.
+- **SSH restricted by CIDR**: Terraform requires an explicit `allowed_ssh_cidr` variable — no default, no `0.0.0.0/0`.
+- **SSH host key verification**: deploy scripts use `StrictHostKeyChecking=accept-new` (trust on first connect, reject on change) instead of disabling verification.
+
+### Infrastructure (Terraform)
+
+- **Scoped IAM policy**: S3 access is limited to the specific `results_bucket` — no wildcard resource grants.
+- **Encrypted EBS volumes**: root block devices use `encrypted = true`.
+- **Public IP opt-in**: `assign_public_ip` defaults to `true` for backward compatibility but can be set to `false` for private-subnet deployments with VPN/SSM.
+
+### Application
+
+- **Config path validation**: only `.yaml`/`.yml` files are accepted as config paths.
+- **Output directory validation**: `metrics.output_dir` must be a relative path to prevent writing to arbitrary system directories.
+- **Report file permissions**: benchmark reports are written with `0600` (owner-only read/write).
+- **Bounded reads**: conversation history queries are capped at `max_history_messages` (default 500) to prevent unbounded memory growth.
+- **Input validation**: percentage fields (`continue_conversation_pct`, `web_search_pct`) are validated to 0-100. Duration parse errors are checked explicitly.
+- **Dashboard race condition**: the dashboard's phase field is protected by `sync.RWMutex` for safe concurrent access.
 
 ## Project Structure
 

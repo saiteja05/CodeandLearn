@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"time"
 
 	"github.com/google/uuid"
@@ -12,6 +13,8 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
+
+var uriPattern = regexp.MustCompile(`mongodb(\+srv)?://[^\s,]+`)
 
 type ConversationState struct {
 	ConversationID uuid.UUID
@@ -22,16 +25,18 @@ type ConversationState struct {
 }
 
 type ConversationRunner struct {
-	poolMgr   *pool.Manager
-	msgGen    *MessageGenerator
-	collector *metrics.Collector
+	poolMgr            *pool.Manager
+	msgGen             *MessageGenerator
+	collector          *metrics.Collector
+	maxHistoryMessages int64
 }
 
-func NewConversationRunner(poolMgr *pool.Manager, msgGen *MessageGenerator, collector *metrics.Collector) *ConversationRunner {
+func NewConversationRunner(poolMgr *pool.Manager, msgGen *MessageGenerator, collector *metrics.Collector, maxHistoryMessages int) *ConversationRunner {
 	return &ConversationRunner{
-		poolMgr:   poolMgr,
-		msgGen:    msgGen,
-		collector: collector,
+		poolMgr:            poolMgr,
+		msgGen:             msgGen,
+		collector:          collector,
+		maxHistoryMessages: int64(maxHistoryMessages),
 	}
 }
 
@@ -106,18 +111,20 @@ func (cr *ConversationRunner) SendHumanMessage(ctx context.Context, state *Conve
 
 func (cr *ConversationRunner) ReadConversationHistory(ctx context.Context, state *ConversationState) (int, error) {
 	filter := bson.M{"conversation_id": state.ConversationID.String()}
-	findOpts := options.Find().SetSort(bson.D{{Key: "create_time", Value: 1}})
+	findOpts := options.Find().
+		SetSort(bson.D{{Key: "create_time", Value: 1}}).
+		SetLimit(cr.maxHistoryMessages)
 
 	start := time.Now()
 	cursor, err := cr.poolMgr.MessagesCollection().Find(ctx, filter, findOpts)
 	if err != nil {
 		e2e := time.Since(start)
 		cr.collector.Record(metrics.Sample{
-			Operation: metrics.OpReadConvoHistory,
+			Operation:  metrics.OpReadConvoHistory,
 			E2ELatency: e2e,
-			Success:   false,
-			Error:     errStr(err),
-			Timestamp: time.Now(),
+			Success:    false,
+			Error:      errStr(err),
+			Timestamp:  time.Now(),
 		})
 		return 0, fmt.Errorf("reading conversation history: %w", err)
 	}
@@ -184,11 +191,11 @@ func (cr *ConversationRunner) UpdateConversationMetadata(ctx context.Context, st
 	e2e := time.Since(start)
 
 	cr.collector.Record(metrics.Sample{
-		Operation: metrics.OpWriteConvoMetadata,
+		Operation:  metrics.OpWriteConvoMetadata,
 		E2ELatency: e2e,
-		Success:   err == nil,
-		Error:     errStr(err),
-		Timestamp: time.Now(),
+		Success:    err == nil,
+		Error:      errStr(err),
+		Timestamp:  time.Now(),
 	})
 
 	if err != nil {
@@ -230,5 +237,5 @@ func errStr(err error) string {
 	if err == nil {
 		return ""
 	}
-	return err.Error()
+	return uriPattern.ReplaceAllString(err.Error(), "[REDACTED_URI]")
 }

@@ -27,7 +27,7 @@ for i in "${!IPS[@]}"; do
     IP="${IPS[$i]}"
     echo "  [client-$i] $IP - starting..."
     
-    ssh -i "$KEY_FILE" -o StrictHostKeyChecking=no "ec2-user@$IP" \
+    ssh -i "$KEY_FILE" -o StrictHostKeyChecking=accept-new "ec2-user@$IP" \
         "nohup $BENCH_DIR/mongodb-ai-bench -config $BENCH_DIR/config.yaml > $BENCH_DIR/bench.log 2>&1 &" &
     PIDS+=($!)
 done

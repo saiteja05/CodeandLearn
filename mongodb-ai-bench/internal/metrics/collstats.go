@@ -21,18 +21,18 @@ type CollStatsSnapshot struct {
 }
 
 type CollStatsWriter struct {
-	mu                    sync.Mutex
-	file                  *os.File
-	writer                *csv.Writer
-	poolMgr               *pool.Manager
-	interval              time.Duration
-	conversationsEnabled  bool
-	startTime             time.Time
-	phase                 string
-	stopCh                chan struct{}
-	doneCh                chan struct{}
-	logger                *slog.Logger
-	latest                []pool.CollectionStatsResult
+	mu                   sync.Mutex
+	file                 *os.File
+	writer               *csv.Writer
+	poolMgr              *pool.Manager
+	interval             time.Duration
+	conversationsEnabled bool
+	startTime            time.Time
+	phase                string
+	stopCh               chan struct{}
+	doneCh               chan struct{}
+	logger               *slog.Logger
+	latest               []pool.CollectionStatsResult
 }
 
 func NewCollStatsWriter(outputDir string, poolMgr *pool.Manager, interval time.Duration, conversationsEnabled bool) (*CollStatsWriter, error) {
@@ -129,7 +129,9 @@ func (cs *CollStatsWriter) collect() {
 		}
 
 		cs.mu.Lock()
-		cs.writer.Write(record)
+		if err := cs.writer.Write(record); err != nil {
+			cs.logger.Error("failed to write collstats CSV record", "err", err)
+		}
 		cs.writer.Flush()
 		cs.mu.Unlock()
 	}

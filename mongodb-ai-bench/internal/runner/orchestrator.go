@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -26,13 +28,14 @@ type Orchestrator struct {
 }
 
 type Dashboard struct {
-	collector  *metrics.Collector
-	poolMgr    *pool.Manager
-	runner     *ProgressiveRunner
-	interval   time.Duration
-	stopCh     chan struct{}
-	doneCh     chan struct{}
-	phase      string
+	collector *metrics.Collector
+	poolMgr   *pool.Manager
+	runner    *ProgressiveRunner
+	interval  time.Duration
+	stopCh    chan struct{}
+	doneCh    chan struct{}
+	mu        sync.RWMutex
+	phase     string
 }
 
 func NewOrchestrator(cfg *config.Config) (*Orchestrator, error) {
@@ -43,7 +46,11 @@ func NewOrchestrator(cfg *config.Config) (*Orchestrator, error) {
 
 	collector := metrics.NewCollector()
 
-	csvInterval, _ := cfg.Metrics.ParsedCSVInterval()
+	csvInterval, err := cfg.Metrics.ParsedCSVInterval()
+	if err != nil {
+		poolMgr.Close(context.Background())
+		return nil, fmt.Errorf("parsing csv_interval: %w", err)
+	}
 	tsWriter, err := metrics.NewTimeSeriesWriter(cfg.Metrics.OutputDir, collector, csvInterval)
 	if err != nil {
 		poolMgr.Close(context.Background())
@@ -52,7 +59,11 @@ func NewOrchestrator(cfg *config.Config) (*Orchestrator, error) {
 
 	var collStatsWriter *metrics.CollStatsWriter
 	if cfg.Metrics.CollectionStatsEnabled {
-		csInterval, _ := cfg.Metrics.ParsedCollectionStatsInterval()
+		csInterval, err := cfg.Metrics.ParsedCollectionStatsInterval()
+		if err != nil {
+			poolMgr.Close(context.Background())
+			return nil, fmt.Errorf("parsing collection_stats_interval: %w", err)
+		}
 		csw, err := metrics.NewCollStatsWriter(cfg.Metrics.OutputDir, poolMgr, csInterval, cfg.Workload.ConversationsEnabled())
 		if err != nil {
 			poolMgr.Close(context.Background())
@@ -61,7 +72,11 @@ func NewOrchestrator(cfg *config.Config) (*Orchestrator, error) {
 		collStatsWriter = csw
 	}
 
-	statsInterval, _ := cfg.Metrics.ParsedStatsInterval()
+	statsInterval, err := cfg.Metrics.ParsedStatsInterval()
+	if err != nil {
+		poolMgr.Close(context.Background())
+		return nil, fmt.Errorf("parsing stats_interval: %w", err)
+	}
 	dashboard := &Dashboard{
 		collector: collector,
 		poolMgr:   poolMgr,
@@ -161,7 +176,7 @@ func (o *Orchestrator) Run() error {
 
 	report := o.GenerateReport(elapsed)
 	reportPath := fmt.Sprintf("%s/report_%s.md", o.cfg.Metrics.OutputDir, time.Now().Format("20060102_150405"))
-	if writeErr := os.WriteFile(reportPath, []byte(report), 0644); writeErr != nil {
+	if writeErr := os.WriteFile(reportPath, []byte(report), 0600); writeErr != nil {
 		o.logger.Error("failed to write report", "err", writeErr)
 	} else {
 		o.logger.Info("report written", "path", reportPath)
@@ -306,7 +321,7 @@ func (d *Dashboard) printStats() {
 	activeVUs := d.runner.ActiveVUs()
 
 	fmt.Println("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Printf("  Phase: %-20s | VUs: %-6d | Elapsed: %s\n", d.phase, activeVUs, elapsed.Round(time.Second))
+	fmt.Printf("  Phase: %-20s | VUs: %-6d | Elapsed: %s\n", d.getPhase(), activeVUs, elapsed.Round(time.Second))
 	fmt.Printf("  Total Ops: %-10d | Writes: %-10d | Reads: %-10d | Errors: %d\n",
 		d.collector.TotalOps(), d.collector.TotalWriteOps(), d.collector.TotalReadOps(), d.collector.TotalErrors())
 	fmt.Printf("  Pool: total=%d checked_out=%d available=%d\n",
@@ -352,7 +367,15 @@ func (d *Dashboard) printStats() {
 }
 
 func (d *Dashboard) SetPhase(phase string) {
+	d.mu.Lock()
 	d.phase = phase
+	d.mu.Unlock()
+}
+
+func (d *Dashboard) getPhase() string {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	return d.phase
 }
 
 func (d *Dashboard) Stop() {
@@ -368,8 +391,10 @@ func errorRate(errors, total int64) float64 {
 }
 
 func maskURI(uri string) string {
-	if len(uri) > 30 {
-		return uri[:20] + "...***"
+	u, err := url.Parse(uri)
+	if err != nil {
+		return "***"
 	}
-	return uri
+	u.User = nil
+	return u.String()
 }

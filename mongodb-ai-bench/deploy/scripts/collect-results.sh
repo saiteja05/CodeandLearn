@@ -21,11 +21,11 @@ for i in "${!IPS[@]}"; do
     mkdir -p "$CLIENT_DIR"
     
     echo "  [client-$i] $IP - downloading results..."
-    scp -i "$KEY_FILE" -o StrictHostKeyChecking=no -r \
+    scp -i "$KEY_FILE" -o StrictHostKeyChecking=accept-new -r \
         "ec2-user@$IP:$BENCH_DIR/results/*" "$CLIENT_DIR/" 2>/dev/null || \
         echo "  [client-$i] Warning: no results found"
     
-    scp -i "$KEY_FILE" -o StrictHostKeyChecking=no \
+    scp -i "$KEY_FILE" -o StrictHostKeyChecking=accept-new \
         "ec2-user@$IP:$BENCH_DIR/bench.log" "$CLIENT_DIR/bench.log" 2>/dev/null || \
         echo "  [client-$i] Warning: no log found"
 done
